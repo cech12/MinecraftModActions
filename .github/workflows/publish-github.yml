@@ -1,0 +1,87 @@
+# This workflow publishes a Minecraft Forge project on Github
+
+name: Publish Github
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: true
+        type: number
+      mod-name:
+        required: true
+        type: string
+      mod-id:
+        required: true
+        type: string
+      github-token:
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: Publish Github
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v2
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Cache MC Assets
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Get Version
+        id: get_version
+        uses: actions/github-script@0.4.0
+        with:
+          github-token: ${{ inputs.github-token }}
+          result-encoding: string
+          script: |
+            return '${{ github.ref }}'.replace('refs/tags/', '');
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build
+        run: ./gradlew build
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ inputs.github-token }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.result }}
+          release_name: ${{ inputs.mod-name }} ${{ steps.get_version.outputs.result }}
+          body: |
+            [This was an automatic build]
+            // todo: add changelog
+          draft: true
+          prerelease: false
+
+      - name: Upload Main Jar
+        id: upload_main_jar
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ inputs.github-token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
+          asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
+          asset_content_type: application/java-archive

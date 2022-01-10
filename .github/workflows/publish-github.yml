@@ -54,7 +54,7 @@ jobs:
         id: get_version
         uses: actions/github-script@0.4.0
         with:
-          github-token: ${{ inputs.github-token }}
+          github-token: ${{ secrets.github-token }}
           result-encoding: string
           script: |
             return '${{ github.ref }}'.replace('refs/tags/', '');
@@ -69,7 +69,7 @@ jobs:
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ inputs.github-token }}
+          GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
           tag_name: ${{ steps.get_version.outputs.result }}
           release_name: ${{ inputs.mod-name }} ${{ steps.get_version.outputs.result }}
@@ -83,7 +83,7 @@ jobs:
         id: upload_main_jar
         uses: actions/upload-release-asset@v1.0.1
         env:
-          GITHUB_TOKEN: ${{ inputs.github-token }}
+          GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar

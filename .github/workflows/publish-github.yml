@@ -6,17 +6,21 @@ on:
   workflow_call:
     inputs:
       java-version:
+        description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
       mod-name:
+        description: 'The name that should be added to the title of the Release on Github'
         required: true
         type: string
       mod-id:
+        description: 'The mod id that is part of the built jar file'
         required: true
         type: string
+    secrets:
       github-token:
+        description: 'Github token'
         required: true
-        type: string
 
 jobs:
   publish:

@@ -6,11 +6,13 @@ on:
   workflow_call:
     inputs:
       java-version:
+        description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
+    secrets:
       curseforge-token:
+        description: 'Curseforge API token'
         required: true
-        type: string
 
 jobs:
   publish:

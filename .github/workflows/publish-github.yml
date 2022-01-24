@@ -17,6 +17,16 @@ on:
         description: 'The mod id that is part of the built jar file'
         required: true
         type: string
+      publish-api:
+        description: 'Defines if the release should contain the api jar'
+        required: false
+        type: boolean
+        default: false
+      publish-sources:
+        description: 'Defines if the release should contain the sources jar'
+        required: false
+        type: boolean
+        default: false
     secrets:
       github-token:
         description: 'Github token'
@@ -88,4 +98,28 @@ jobs:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
           asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
+          asset_content_type: application/java-archive
+
+      - name: Upload Api Jar
+        if: ${{ inputs.publish-api }}
+        id: upload_api_jar
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-api.jar
+          asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-api.jar
+          asset_content_type: application/java-archive
+
+      - name: Upload Sources Jar
+        if: ${{ inputs.publish-sources }}
+        id: upload_sources_jar
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-sources.jar
+          asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-sources.jar
           asset_content_type: application/java-archive

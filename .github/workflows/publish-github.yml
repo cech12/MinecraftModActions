@@ -75,6 +75,17 @@ jobs:
       - name: Build
         run: ./gradlew build
 
+      - name: Get Changelog
+        id: get_changelog
+        run: |
+          content=`cat ./CHANGELOG.md | sed '0,/^## \[${{ steps.get_version.outputs.result }}\]/d' | sed '/^## \[/,$d'`
+          # the following lines are required for multi line files
+          content="${content//'%'/'%25'}"
+          content="${content//$'\n'/'%0A'}"
+          content="${content//$'\r'/'%0D'}"
+          # end of handling multi line file
+          echo "::set-output name=result::$content"
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -83,10 +94,8 @@ jobs:
         with:
           tag_name: ${{ steps.get_version.outputs.result }}
           release_name: ${{ inputs.mod-name }} ${{ steps.get_version.outputs.result }}
-          body: |
-            [This was an automatic build]
-            // todo: add changelog
-          draft: true
+          body: ${{ steps.get_changelog.outputs.result }}
+          draft: false
           prerelease: false
 
       - name: Upload Main Jar

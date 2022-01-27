@@ -78,7 +78,7 @@ jobs:
       - name: Get Changelog
         id: get_changelog
         run: |
-          content=`cat ./CHANGELOG.md | sed '0,/^## \[${{ steps.get_version.outputs.result }}\]/d' | sed '/^## \[/,$d'`
+          content=`cat ./CHANGELOG.md | sed '0,/^## \[${{ github.event.repository }}\]/d' | sed '/^## \[/,$d'`
           # the following lines are required for multi line files
           content="${content//'%'/'%25'}"
           content="${content//$'\n'/'%0A'}"

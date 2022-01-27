@@ -4,11 +4,17 @@ name: Trigger Jitpack
 
 on:
   workflow_call:
+    secrets:
+      github-token:
+        description: 'Github token'
+        required: true
 
 jobs:
   trigger:
     name: Trigger Jitpack
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
 
     steps:
       - name: Get Version
@@ -22,4 +28,4 @@ jobs:
 
       - name: Trigger Jitpack Build
         run: |
-          curl "https://jitpack.io/com/github/${{ env.GITHUB_REPOSITORY }}/${{ steps.get_version.outputs.result }}/"
+          curl "https://jitpack.io/com/github/${{ github.event.repository.owner.login }}/${{ github.event.repository.name }}/${{ steps.get_version.outputs.result }}/"

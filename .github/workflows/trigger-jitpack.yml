@@ -4,19 +4,6 @@ name: Trigger Jitpack
 
 on:
   workflow_call:
-    inputs:
-      user:
-        description: 'Github username'
-        required: true
-        type: string
-      repository:
-        description: 'The name of the Github repository'
-        required: true
-        type: string
-      tag:
-        description: 'The tag, that should be built'
-        required: true
-        type: string
 
 jobs:
   trigger:
@@ -24,6 +11,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Get Version
+        id: get_version
+        uses: actions/github-script@0.4.0
+        with:
+          github-token: ${{ secrets.github-token }}
+          result-encoding: string
+          script: |
+            return '${{ github.ref }}'.replace('refs/tags/', '');
+
       - name: Trigger Jitpack Build
         run: |
-          curl "https://jitpack.io/com/github/${{ inputs.user }}/${{ inputs.repository }}/${{ inputs.tag }}/"
+          curl "https://jitpack.io/com/github/${{ env.GITHUB_REPOSITORY }}/${{ steps.get_version.outputs.result }}/"

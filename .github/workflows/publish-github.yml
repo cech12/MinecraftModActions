@@ -39,6 +39,7 @@ jobs:
     permissions:
       actions: read
       contents: write
+      packages: read
 
     steps:
       - name: Checkout code

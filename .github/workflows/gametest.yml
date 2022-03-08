@@ -1,0 +1,45 @@
+# This workflow calls runGameTestServer to test a Minecraft Forge mod project
+
+name: "Game Test"
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: 'Java version that should be used to compile the code [8, 16, 17]'
+        required: true
+        type: number
+
+jobs:
+  gametest:
+    name: Game Test
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v2
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Cache MC Assets
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Game Test
+        run: ./gradlew runGameTestServer

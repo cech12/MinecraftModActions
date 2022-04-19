@@ -38,6 +38,6 @@ jobs:
       - name: Publishing on Curseforge
         uses: gradle/gradle-build-action@v2
         with:
-            arguments: curseforge
+          arguments: curseforge
         env:
           CURSEFORGE_API_KEY: ${{ secrets.curseforge-token }}

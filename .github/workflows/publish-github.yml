@@ -43,38 +43,30 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up JDK ${{ inputs.java-version }}
-        uses: actions/setup-java@v2
-        with:
-          java-version: ${{ inputs.java-version }}
-          distribution: 'temurin'
-
-      - name: Cache MC Assets
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+        uses: actions/checkout@v3
 
       - name: Get Version
         id: get_version
-        uses: actions/github-script@0.4.0
+        uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.github-token }}
           result-encoding: string
           script: |
             return '${{ github.ref }}'.replace('refs/tags/', '');
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Setup Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@v1
 
       - name: Build
-        run: ./gradlew build
+        uses: gradle/gradle-build-action@v2
+        with:
+            arguments: build
 
       - name: Get Changelog
         id: get_changelog
@@ -101,7 +93,7 @@ jobs:
 
       - name: Upload Main Jar
         id: upload_main_jar
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
@@ -113,7 +105,7 @@ jobs:
       - name: Upload Api Jar
         if: ${{ inputs.publish-api }}
         id: upload_api_jar
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
@@ -125,7 +117,7 @@ jobs:
       - name: Upload Sources Jar
         if: ${{ inputs.publish-sources }}
         id: upload_sources_jar
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:

@@ -1,0 +1,25 @@
+# This workflow checks the gradle wrapper for updates
+
+name: Update Gradle Wrapper
+
+on:
+  workflow_call:
+    secrets:
+      github-token:
+        description: 'Github token'
+        required: true
+
+jobs:
+  trigger:
+    name: Update Gradle Wrapper
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Update Gradle Wrapper
+        uses: gradle-update/update-gradle-wrapper-action@v1

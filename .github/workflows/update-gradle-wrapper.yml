@@ -4,10 +4,6 @@ name: Update Gradle Wrapper
 
 on:
   workflow_call:
-    secrets:
-      github-token:
-        description: 'Github token'
-        required: true
 
 jobs:
   trigger:

@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: write
       packages: read
       pull-requests: write
 

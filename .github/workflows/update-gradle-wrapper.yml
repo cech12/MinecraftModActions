@@ -4,6 +4,11 @@ name: Update Gradle Wrapper
 
 on:
   workflow_call:
+    inputs:
+      java-version:
+        description: 'Java version that should be used to compile the code [8, 16, 17]'
+        required: true
+        type: number
     secrets:
       github-token:
         description: 'Github token'
@@ -21,6 +26,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Setup Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
 
       - name: Update Gradle Wrapper
         uses: gradle-update/update-gradle-wrapper-action@v1

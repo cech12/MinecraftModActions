@@ -4,6 +4,10 @@ name: Update Gradle Wrapper
 
 on:
   workflow_call:
+    secrets:
+      github-token:
+        description: 'Github token'
+        required: true
 
 jobs:
   trigger:
@@ -11,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      packages: read
       pull-requests: write
 
     steps:
@@ -19,3 +24,5 @@ jobs:
 
       - name: Update Gradle Wrapper
         uses: gradle-update/update-gradle-wrapper-action@v1
+        with:
+          repo-token: ${{ inputs.github-token }}

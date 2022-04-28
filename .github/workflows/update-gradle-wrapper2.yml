@@ -56,7 +56,8 @@ jobs:
       - name: Get Gradle version of repository
         id: gradle-version
         run: |
-          content=`./gradlew --version | sed '0,/^Gradle /d' | sed '/^-/,$d'`
+#          content=`./gradlew --version | sed '0,/^Gradle /d' | sed '/^-/,$d'`
+          content=`./gradlew --version#`
           echo "::set-output name=version::$content"
 
 #      - name: Gradle Version of repository
@@ -77,7 +78,8 @@ jobs:
       - name: Get Gradle version of repository
         id: new-gradle-version
         run: |
-          content=`./gradlew --version | sed '0,/^Gradle /d' | sed '/^-/,$d'`
+#          content=`./gradlew --version | sed '0,/^Gradle /d' | sed '/^-/,$d'`
+          content=`./gradlew --version#`
           echo "::set-output name=version::$content"
 
       - name: Print old version

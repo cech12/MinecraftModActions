@@ -81,9 +81,11 @@ jobs:
           echo "::set-output name=version::$content"
 
       - name: Print old version
-        run: echo "Old version: ${{ steps.gradle-version.outputs.version }}"
+        run: |
+          echo "Old version ${{ steps.gradle-version.outputs.version }}"
       - name: Print new version
-        run: echo "New version: ${{ steps.new-gradle-version.outputs.version }}"
+        run: |
+          echo "New version ${{ steps.new-gradle-version.outputs.version }}"
 #      - name: Gradle Update
 #        uses: gradle/gradle-build-action@v2
 #        with:

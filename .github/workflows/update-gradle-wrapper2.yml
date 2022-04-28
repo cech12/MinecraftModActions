@@ -31,7 +31,7 @@ jobs:
       - name: Get latest Gradle version
         id: get-latest-gradle-version
         run: |
-          content=`curl "https://services.gradle.org/versions/current`
+          content=`curl "https://services.gradle.org/versions/current"`
           # the following lines are only required for multi line json
           content="${content//'%'/'%25'}"
           content="${content//$'\n'/'%0A'}"

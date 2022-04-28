@@ -56,31 +56,43 @@ jobs:
       - name: Get Gradle version of repository
         id: gradle-version
         run: |
-          content=`./gradlew --version` 2>&1
+          content=$(./gradlew --version -q | tail -n 1)
           echo "::set-output name=version::$content"
 
-      - name: Download new Gradle version
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
+#      - name: Download new Gradle version
+#        uses: gradle/gradle-build-action@v2
+#        with:
+#          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
           
-      - name: Install new Gradle version
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
+#      - name: Install new Gradle version
+#        uses: gradle/gradle-build-action@v2
+#        with:
+#          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
 
-      - name: Get Gradle version of repository
-        id: new-gradle-version
-        run: |
-          content=`./gradlew --version` 2>&1
-          echo "::set-output name=version::$content"
+#      - name: Get Gradle version of repository
+#        id: new-gradle-version
+#        run: |
+#          content=`./gradlew --version` 2>&1
+#          echo "::set-output name=version::$content"
 
       - name: Print old version
         run: |
           echo "Old version ${{ steps.gradle-version.outputs.version }}"
-      - name: Print new version
-        run: |
-          echo "New version ${{ steps.new-gradle-version.outputs.version }}"
+#      - name: Print new version
+#        run: |
+#          echo "New version ${{ steps.new-gradle-version.outputs.version }}"
+
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
 #      - name: Gradle Update
 #        uses: gradle/gradle-build-action@v2
 #        with:

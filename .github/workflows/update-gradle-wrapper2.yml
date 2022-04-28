@@ -56,7 +56,7 @@ jobs:
       - name: Get Gradle version of repository
         id: gradle-version
         run: |
-          content=$(./gradlew --version -q | tail -n 1)
+          content=$(./gradlew --version)
           echo "::set-output name=version::$content"
 
 #      - name: Download new Gradle version

@@ -28,21 +28,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-#      - name: Get latest Gradle version
-#        id: get-latest-gradle-version
-#        run: |
-#          content=`curl "https://services.gradle.org/versions/current`
-#          # the following lines are only required for multi line json
-#          content="${content//'%'/'%25'}"
-#          content="${content//$'\n'/'%0A'}"
-#          content="${content//$'\r'/'%0D'}"
-#          # end of optional handling for multi line json
-#          echo "::set-output name=packageJson::$content"
+      - name: Get latest Gradle version
+        id: get-latest-gradle-version
+        run: |
+          content=`curl "https://services.gradle.org/versions/current`
+          # the following lines are only required for multi line json
+          content="${content//'%'/'%25'}"
+          content="${content//$'\n'/'%0A'}"
+          content="${content//$'\r'/'%0D'}"
+          # end of optional handling for multi line json
+          echo "::set-output name=packageJson::$content"
 
-#      - name: Parse latest Gradle version
-#        id: parse-latest-gradle-version
-#        run: |
-#          echo "::set-output name=version::${{fromJson(steps.get-latest-gradle-version.outputs.packageJson).version}}"
+      - name: Parse latest Gradle version
+        id: parse-latest-gradle-version
+        run: |
+          echo "::set-output name=version::${{fromJson(steps.get-latest-gradle-version.outputs.packageJson).version}}"
 
       - name: Setup Java ${{ inputs.java-version }}
         uses: actions/setup-java@v3
@@ -50,7 +50,7 @@ jobs:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
 
-      - name: Gradle Version of repository
+      - name: Initialize Gradle
         uses: gradle/gradle-build-action@v2
 
       - name: Get Gradle version of repository
@@ -59,20 +59,15 @@ jobs:
           content=`./gradlew --version`
           echo "::set-output name=version::$content"
 
-#      - name: Gradle Version of repository
-#        uses: gradle/gradle-build-action@v2
-#        with:
-#          arguments: --version
-
       - name: Download new Gradle version
         uses: gradle/gradle-build-action@v2
         with:
-          gradle-version: current
+          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
           
       - name: Install new Gradle version
         uses: gradle/gradle-build-action@v2
         with:
-          gradle-version: current
+          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
 
       - name: Get Gradle version of repository
         id: new-gradle-version

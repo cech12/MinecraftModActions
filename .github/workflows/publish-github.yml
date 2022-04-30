@@ -17,8 +17,8 @@ on:
         description: 'The mod id that is part of the built jar file'
         required: true
         type: string
-      tag-prefix:
-        description: 'If the tags have a prefix in front of the version like "forge-", it can be added here.'
+      version-prefix:
+        description: 'If the versions have a prefix like "forge-", it can be added here.'
         required: false
         type: string
         default: ''
@@ -57,7 +57,7 @@ jobs:
           github-token: ${{ secrets.github-token }}
           result-encoding: string
           script: |
-            return '${{ github.ref }}'.replace('refs/tags/${{ inputs.tag-prefix }}', '');
+            return '${{ github.ref }}'.replace('refs/tags/${{ inputs.version-prefix }}', '');
 
       - name: Setup Java ${{ inputs.java-version }}
         uses: actions/setup-java@v3
@@ -103,7 +103,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
+          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}.jar
           asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
           asset_content_type: application/java-archive
 
@@ -115,7 +115,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-api.jar
+          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-api.jar
           asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-api.jar
           asset_content_type: application/java-archive
 
@@ -127,6 +127,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-sources.jar
+          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-sources.jar
           asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-sources.jar
           asset_content_type: application/java-archive

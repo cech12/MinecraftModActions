@@ -17,6 +17,11 @@ on:
         description: 'The mod id that is part of the built jar file'
         required: true
         type: string
+      tag-prefix:
+        description: 'If the tags have a prefix in front of the version like "forge-", it can be added here.'
+        required: false
+        type: string
+        default: ''
       publish-api:
         description: 'Defines if the release should contain the api jar'
         required: false
@@ -52,7 +57,7 @@ jobs:
           github-token: ${{ secrets.github-token }}
           result-encoding: string
           script: |
-            return '${{ github.ref }}'.replace('refs/tags/', '');
+            return '${{ github.ref }}'.replace('refs/tags/${{ inputs.tag-prefix }}', '');
 
       - name: Setup Java ${{ inputs.java-version }}
         uses: actions/setup-java@v3

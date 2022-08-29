@@ -9,6 +9,10 @@ on:
         description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
+      arguments:
+        description: 'Additional arguments for gradle run'
+        required: false
+        type: string
 
 jobs:
   gametest:
@@ -34,4 +38,4 @@ jobs:
       - name: Run Game Test
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: runGameTestServer
+          arguments: runGameTestServer ${{ inputs.arguments }}

@@ -90,8 +90,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.github-token }}
         with:
-          tag_name: ${{ steps.get_version.outputs.result }}
-          release_name: ${{ inputs.mod-name }} ${{ steps.get_version.outputs.result }}
+          tag_name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          release_name: ${{ inputs.mod-name }} ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           body: ${{ steps.get_changelog.outputs.result }}
           draft: false
           prerelease: false
@@ -104,7 +104,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}.jar
-          asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}.jar
+          asset_name: ${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}.jar
           asset_content_type: application/java-archive
 
       - name: Upload Api Jar
@@ -116,7 +116,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-api.jar
-          asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-api.jar
+          asset_name: ${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-api.jar
           asset_content_type: application/java-archive
 
       - name: Upload Sources Jar
@@ -128,5 +128,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-sources.jar
-          asset_name: ${{ inputs.mod-id }}-${{ steps.get_version.outputs.result }}-sources.jar
+          asset_name: ${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-sources.jar
           asset_content_type: application/java-archive

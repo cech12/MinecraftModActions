@@ -38,6 +38,6 @@ jobs:
           arguments: build
 
       - name: Dependency Submission
-        uses: mikepenz/gradle-dependency-submission@v0.8.0
+        uses: mikepenz/gradle-dependency-submission@v0.8.1
         with:
           gradle-build-configuration: 'compileClasspath'

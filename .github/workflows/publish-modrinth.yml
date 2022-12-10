@@ -17,10 +17,6 @@ on:
         description: 'The name that should be added to the title of the Release on Github'
         required: true
         type: string
-      mod-id:
-        description: 'The mod id that is part of the built jar file'
-        required: true
-        type: string
       version-prefix:
         description: 'If the versions have a prefix like "forge-", it can be added here.'
         required: false

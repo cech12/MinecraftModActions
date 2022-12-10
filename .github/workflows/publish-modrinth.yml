@@ -13,10 +13,6 @@ on:
         description: 'The Modrinth project id'
         required: true
         type: string
-      mod-name:
-        description: 'The name that should be added to the title of the Release on Github'
-        required: true
-        type: string
       version-prefix:
         description: 'If the versions have a prefix like "forge-", it can be added here.'
         required: false
@@ -83,7 +79,7 @@ jobs:
           modrinth-token: ${{ secrets.modrinth-token }}
           files-primary: build/libs/!(*-@(api|sources|javadoc)).jar
           files-secondary: build/libs/*-@(api|sources|javadoc).jar
-          name: ${{ inputs.mod-name }} ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           version-type: release
           changelog: ${{ steps.get_changelog.outputs.result }}

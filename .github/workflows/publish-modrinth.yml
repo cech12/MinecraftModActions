@@ -13,6 +13,15 @@ on:
         description: 'The Modrinth project id'
         required: true
         type: string
+      game-versions:
+        description: 'A list of supported Minecraft versions'
+        required: false
+        default: ${undefined}
+      release-type:
+        description: 'The release type of the version [alpha, beta, release]'
+        required: false
+        type: string
+        default: release
       version-prefix:
         description: 'If the versions have a prefix like "forge-", it can be added here.'
         required: false
@@ -77,9 +86,11 @@ jobs:
         with:
           modrinth-id: ${{ inputs.modrinth-id }}
           modrinth-token: ${{ secrets.modrinth-token }}
+          modrinth-featured: false
           files-primary: build/libs/!(*-@(api|sources|javadoc)).jar
           files-secondary: build/libs/*-@(api|sources|javadoc).jar
           name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          game-versions: ${{ inputs.game-versions }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
-          version-type: release
+          version-type: ${{ inputs.release-type }}
           changelog: ${{ steps.get_changelog.outputs.result }}

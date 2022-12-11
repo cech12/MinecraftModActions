@@ -1,6 +1,6 @@
 # This workflow publishes a Minecraft Forge project on Curseforge
 
-name: "Publish Curseforge"
+name: Publish Curseforge
 
 on:
   workflow_call:
@@ -9,6 +9,24 @@ on:
         description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
+      curseforge-id:
+        description: 'The Curseforge project id'
+        required: true
+        type: string
+      game-versions:
+        description: 'A list of supported Minecraft versions'
+        required: false
+        default: ${undefined}
+      release-type:
+        description: 'The release type of the version [alpha, beta, release]'
+        required: false
+        type: string
+        default: release
+      version-prefix:
+        description: 'If the versions have a prefix like "forge-", it can be added here.'
+        required: false
+        type: string
+        default: ''
     secrets:
       curseforge-token:
         description: 'Curseforge API token'
@@ -16,7 +34,7 @@ on:
 
 jobs:
   publish:
-    name: "Publish Curseforge"
+    name: Publish Curseforge
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -35,9 +53,20 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/wrapper-validation-action@v1
 
-      - name: Publishing on Curseforge
+      - name: Build
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: curseforge
-        env:
-          CURSEFORGE_API_KEY: ${{ secrets.curseforge-token }}
+          arguments: build
+
+      - name: Publishing on Curseforge
+        uses: Kir-Antipov/mc-publish@v3.2
+        with:
+          curseforge-id: ${{ inputs.curseforge-id }}
+          curseforge-token: ${{ secrets.curseforge-token }}
+          files-primary: build/libs/!(*-@(api|sources|javadoc)).jar
+          files-secondary: build/libs/*-@(api|sources|javadoc).jar
+          name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          game-versions: ${{ inputs.game-versions }}
+          version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          version-type: ${{ inputs.release-type }}
+          changelog-file: CHANGELOG.md

@@ -16,6 +16,7 @@ on:
       game-versions:
         description: 'A list of supported Minecraft versions'
         required: false
+        type: string
         default: ${undefined}
       release-type:
         description: 'The release type of the version [alpha, beta, release]'

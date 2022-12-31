@@ -80,7 +80,7 @@ jobs:
           content="${content//$'\n'/'%0A'}"
           content="${content//$'\r'/'%0D'}"
           # end of handling multi line file
-          echo "::set-output name=result::$content"
+          echo "result=$content" >> $GITHUB_OUTPUT
 
       - name: Create Modrinth Release
         uses: Kir-Antipov/mc-publish@v3.2

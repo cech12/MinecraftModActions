@@ -82,51 +82,15 @@ jobs:
           content="${content//$'\n'/'%0A'}"
           content="${content//$'\r'/'%0D'}"
           # end of handling multi line file
-          echo "::set-output name=result::$content"
+          echo "result=$content" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
-          release_name: ${{ inputs.mod-name }} ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          name: ${{ inputs.mod-name }} ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           body: ${{ steps.get_changelog.outputs.result }}
           draft: false
           prerelease: false
-
-      - name: Upload Main Jar
-        id: upload_main_jar
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}.jar
-          asset_name: ${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}.jar
-          asset_content_type: application/java-archive
-
-      - name: Upload Api Jar
-        if: ${{ inputs.publish-api }}
-        id: upload_api_jar
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-api.jar
-          asset_name: ${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-api.jar
-          asset_content_type: application/java-archive
-
-      - name: Upload Sources Jar
-        if: ${{ inputs.publish-sources }}
-        id: upload_sources_jar
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.github-token }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./build/libs/${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-sources.jar
-          asset_name: ${{ inputs.mod-id }}-${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}-sources.jar
-          asset_content_type: application/java-archive
+          files: build/libs/*.jar
+          token: ${{ secrets.github-token }}

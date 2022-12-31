@@ -77,7 +77,10 @@ jobs:
         id: get_changelog
         run: |
           content=`cat ./CHANGELOG.md | sed '0,/^## \[${{ steps.get_version.outputs.result }}\]/d' | sed '/^## \[/,$d'`
-          echo "result=$content" >> $GITHUB_OUTPUT
+          delimiter="$(openssl rand -hex 8)"
+          echo "result<<$delimiter" >> $GITHUB_OUTPUT
+          echo "$content" >> $GITHUB_OUTPUT
+          echo "$delimiter" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

@@ -81,13 +81,14 @@ jobs:
           echo "$delimiter" >> $GITHUB_OUTPUT
 
       - name: Create Modrinth Release
-        uses: Kir-Antipov/mc-publish@v3.2
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ inputs.modrinth-id }}
           modrinth-token: ${{ secrets.modrinth-token }}
           modrinth-featured: false
-          files-primary: build/libs/!(*-@(api|sources|javadoc)).jar
-          files-secondary: build/libs/*-@(api|sources|javadoc).jar
+          files: |
+            build/libs/!(*-@(api|sources|javadoc)).jar
+            build/libs/*-@(api|sources|javadoc).jar
           name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           game-versions: ${{ inputs.game-versions }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}

@@ -60,7 +60,7 @@ jobs:
           arguments: build
 
       - name: Publishing on Curseforge
-        uses: Kir-Antipov/mc-publish@v3.2
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
           curseforge-id: ${{ inputs.curseforge-id }}
           curseforge-token: ${{ secrets.curseforge-token }}

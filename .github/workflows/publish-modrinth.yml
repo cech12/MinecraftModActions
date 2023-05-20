@@ -81,7 +81,7 @@ jobs:
           echo "$delimiter" >> $GITHUB_OUTPUT
 
       - name: Create Modrinth Release
-        uses: Kir-Antipov/mc-publish@v3.2
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ inputs.modrinth-id }}
           modrinth-token: ${{ secrets.modrinth-token }}

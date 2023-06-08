@@ -29,6 +29,9 @@ on:
         type: string
         default: ''
     secrets:
+      github-token:
+        description: 'Github token'
+        required: true
       curseforge-token:
         description: 'Curseforge API token'
         required: true

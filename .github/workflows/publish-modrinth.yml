@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ''
+      loaders:
+        description: 'A list of supported loaders'
+        required: false
+        type: string
+        default: forge
     secrets:
       github-token:
         description: 'Github token'
@@ -93,4 +98,5 @@ jobs:
           game-versions: ${{ inputs.game-versions }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           version-type: ${{ inputs.release-type }}
+          loaders: ${{ inputs.loaders }}
           changelog: ${{ steps.get_changelog.outputs.result }}

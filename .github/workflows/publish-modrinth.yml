@@ -9,6 +9,11 @@ on:
         description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
+      subproject:
+        description: 'If a build is made in a subproject, this value should contain the name of that subproject'
+        required: false
+        type: string
+        default: ''
       modrinth-id:
         description: 'The Modrinth project id'
         required: true
@@ -74,7 +79,7 @@ jobs:
       - name: Build
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: build
+          arguments: ${{ inputs.subproject != '' && format('{0}:build', inputs.subproject) || 'build' }}
 
       - name: Get Changelog
         id: get_changelog
@@ -92,8 +97,8 @@ jobs:
           modrinth-token: ${{ secrets.modrinth-token }}
           modrinth-featured: false
           files: |
-            build/libs/!(*-@(api|sources|javadoc)).jar
-            build/libs/*-@(api|sources|javadoc).jar
+            ${{ inputs.subproject }}/build/libs/!(*-@(api|sources|javadoc)).jar
+            ${{ inputs.subproject }}/build/libs/*-@(api|sources|javadoc).jar
           name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           game-versions: ${{ inputs.game-versions }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}

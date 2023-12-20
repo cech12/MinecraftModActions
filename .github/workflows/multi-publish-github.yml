@@ -1,0 +1,82 @@
+# This workflow publishes a Minecraft Forge project on Github
+
+name: Publish Github
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: 'Java version that should be used to compile the code [8, 16, 17]'
+        required: true
+        type: number
+      mod-name:
+        description: 'The name that should be added to the title of the Release on Github'
+        required: true
+        type: string
+      mod-id:
+        description: 'The mod id that is part of the built jar file'
+        required: true
+        type: string
+    secrets:
+      github-token:
+        description: 'Github token'
+        required: true
+
+jobs:
+  publish:
+    name: Publish Github
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Get Version
+        id: get_version
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.github-token }}
+          result-encoding: string
+          script: |
+            return '${{ github.ref }}'.replace('refs/tags/${{ inputs.version-prefix }}', '');
+
+      - name: Setup Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@v1
+
+      - name: Build
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: build
+
+      - name: Get Changelog
+        id: get_changelog
+        run: |
+          content=`cat ./CHANGELOG.md | sed '0,/^## \[${{ steps.get_version.outputs.result }}\]/d' | sed '/^## \[/,$d'`
+          delimiter="$(openssl rand -hex 8)"
+          echo "result<<$delimiter" >> $GITHUB_OUTPUT
+          echo "$content" >> $GITHUB_OUTPUT
+          echo "$delimiter" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          name: ${{ inputs.mod-name }} ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          body: ${{ steps.get_changelog.outputs.result }}
+          draft: false
+          prerelease: false
+          files: |
+            forge/build/libs/*.jar
+            neoforge/build/libs/*.jar
+            fabric/build/libs/*.jar
+          token: ${{ secrets.github-token }}

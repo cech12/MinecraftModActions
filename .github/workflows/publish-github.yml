@@ -60,7 +60,7 @@ jobs:
             return '${{ github.ref }}'.replace('refs/tags/${{ inputs.version-prefix }}', '');
 
       - name: Setup Java ${{ inputs.java-version }}
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'

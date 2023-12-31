@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: ''
+      title-prefix:
+        description: 'Adds a string to the beginning of the release title, which otherwise only contains the version.'
+        required: false
+        type: string
+        default: ''
       loaders:
         description: 'A list of supported loaders'
         required: false
@@ -89,7 +94,7 @@ jobs:
           files: |
             ${{ inputs.subproject }}/build/libs/!(*-@(api|sources|javadoc)).jar
             ${{ inputs.subproject }}/build/libs/*-@(api|sources|javadoc).jar
-          name: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
+          name: ${{ inputs.title-prefix }}${{ steps.get_version.outputs.result }}
           game-versions: ${{ inputs.game-versions }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           version-type: ${{ inputs.release-type }}

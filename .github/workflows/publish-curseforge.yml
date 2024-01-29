@@ -82,7 +82,7 @@ jobs:
         uses: gradle/wrapper-validation-action@v1
 
       - name: Build
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/gradle-build-action@v3
         with:
           arguments: ${{ inputs.subproject != '' && format('{0}:build', inputs.subproject) || 'build' }}
 

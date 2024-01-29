@@ -51,7 +51,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Initialize Gradle
-        uses: gradle/gradle-build-action@v2
+        uses: gradle/gradle-build-action@v3
 
       - name: Get Gradle version of repository
         id: gradle-version
@@ -60,12 +60,12 @@ jobs:
           echo "::set-output name=version::$content"
 
 #      - name: Download new Gradle version
-#        uses: gradle/gradle-build-action@v2
+#        uses: gradle/gradle-build-action@v3
 #        with:
 #          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
           
 #      - name: Install new Gradle version
-#        uses: gradle/gradle-build-action@v2
+#        uses: gradle/gradle-build-action@v3
 #        with:
 #          arguments: wrapper --gradle-version=${{ steps.parse-latest-gradle-version.outputs.version }}
 
@@ -94,12 +94,12 @@ jobs:
           
           
 #      - name: Gradle Update
-#        uses: gradle/gradle-build-action@v2
+#        uses: gradle/gradle-build-action@v3
 #        with:
 #          arguments: --gradle-version=${{steps.parse-latest-gradle-version.outputs.version}}
 
 #      - name: Second Gradle Update
-#        uses: gradle/gradle-build-action@v2
+#        uses: gradle/gradle-build-action@v3
 #        with:
 #          arguments: --gradle-version=${{steps.parse-latest-gradle-version.outputs.version}}
 

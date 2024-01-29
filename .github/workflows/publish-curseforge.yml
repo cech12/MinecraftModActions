@@ -81,10 +81,11 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/wrapper-validation-action@v1
 
-      - name: Build
-        uses: gradle/gradle-build-action@v2
-        with:
-          arguments: ${{ inputs.subproject != '' && format('{0}:build', inputs.subproject) || 'build' }}
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Execute Gradle build
+        run: ./gradlew ${{ inputs.subproject != '' && format('{0}:build', inputs.subproject) || 'build' }}
 
       - name: Publishing on Curseforge
         uses: Kir-Antipov/mc-publish@v3.3.0

@@ -103,8 +103,8 @@ jobs:
           modrinth-token: ${{ secrets.modrinth-token }}
           modrinth-featured: false
           files: |
-            ${{ inputs.subproject }}/build/libs/!(*-@(api|sources|javadoc)).jar
-            ${{ inputs.subproject }}/build/libs/*-@(api|sources|javadoc).jar
+            ${{ inputs.subproject != '' && inputs.subproject || '.' }}/build/libs/!(*-@(api|sources|javadoc)).jar
+            ${{ inputs.subproject != '' && inputs.subproject || '.' }}/build/libs/*-@(api|sources|javadoc).jar
           name: ${{ inputs.title-prefix }}${{ steps.get_version.outputs.result }}
           game-versions: ${{ inputs.game-versions }}
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}

@@ -32,11 +32,10 @@ jobs:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
 
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v3
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          validate-wrappers: true
 
       - name: Run Game Test
         run: ./gradlew runGameTestServer ${{ inputs.arguments }}

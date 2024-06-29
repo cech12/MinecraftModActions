@@ -43,6 +43,11 @@ on:
         required: false
         type: string
         default: forge
+      dependencies:
+        description: 'A list of dependencies'
+        required: false
+        type: string
+        default: ${undefined}
     secrets:
       github-token:
         description: 'Github token'
@@ -99,4 +104,5 @@ jobs:
           version: ${{ inputs.version-prefix }}${{ steps.get_version.outputs.result }}
           version-type: ${{ inputs.release-type }}
           loaders: ${{ inputs.loaders }}
+          dependencies: ${{ inputs.dependencies }}
           changelog-file: CHANGELOG.md

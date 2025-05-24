@@ -59,19 +59,30 @@ jobs:
           script: |
             return '${{ github.ref }}'.replace('refs/tags/${{ inputs.version-prefix }}', '');
 
+      - name: Download cached build (if any)
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.github-token }}
+          name: gradle-build
+        continue-on-error: true
+
       - name: Setup Java ${{ inputs.java-version }}
+        if: steps.download.outcome != 'success'
         uses: actions/setup-java@v4
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
 
       - name: Setup Gradle
+        if: steps.download.outcome != 'success'
         uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: true
 
       - name: Execute Gradle build
-        run: ./gradlew build
+        if: steps.download.outcome != 'success'
+        run: ./gradlew build --no-daemon --parallel
 
       - name: Get Changelog
         id: get_changelog

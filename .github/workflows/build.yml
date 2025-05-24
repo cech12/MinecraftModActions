@@ -9,6 +9,10 @@ on:
         description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
+    outputs:
+      artifact-name:
+        description: 'Name of uploaded artifact'
+        value: gradle-build
 
 jobs:
   build:
@@ -45,4 +49,28 @@ jobs:
           validate-wrappers: true
 
       - name: Execute Gradle build
-        run: ./gradlew build
+        run: ./gradlew build --no-daemon --parallel
+        
+      - name: Collect existing build/libs directories
+        id: collect
+        run: |
+          paths=""
+          for dir in \
+            ./build/libs \
+            ./forge/build/libs \
+            ./curseforge/build/libs \
+            ./fabric/build/libs
+          do
+            if [ -d "$dir" ]; then
+              echo "Found: $dir"
+              paths="$paths $dir"
+            fi
+          done
+          echo "paths=$paths" >> $GITHUB_OUTPUT
+
+      - name: Upload existing JAR directories
+        if: steps.collect.outputs.paths != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build
+          path: ${{ steps.collect.outputs.paths }}

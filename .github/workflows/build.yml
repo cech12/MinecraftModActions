@@ -56,10 +56,10 @@ jobs:
         run: |
           paths=""
           for dir in \
-            ./build/libs \
-            ./forge/build/libs \
-            ./curseforge/build/libs \
-            ./fabric/build/libs
+            build/libs \
+            forge/build/libs \
+            neoforge/build/libs \
+            fabric/build/libs
           do
             if [ -d "$dir" ]; then
               echo "Found: $dir"

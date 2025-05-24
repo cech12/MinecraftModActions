@@ -83,6 +83,7 @@ jobs:
         with:
           github-token: ${{ secrets.github-token }}
           name: gradle-build
+          path: .
         continue-on-error: true
 
       - name: Setup Java ${{ inputs.java-version }}

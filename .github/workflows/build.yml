@@ -69,7 +69,7 @@ jobs:
           if [[ ${#paths[@]} -gt 0 ]]; then
             {
               echo 'paths<<EOF'
-              printf '%s\n' "${dirs[@]}"
+              printf '%s\n' "${paths[@]}"
               echo 'EOF'
             } >>"$GITHUB_OUTPUT"
           fi

@@ -56,7 +56,7 @@ jobs:
           for dir in \
             build/libs \
             forge/build/libs \
-            curseforge/build/libs \
+            neoforge/build/libs \
             fabric/build/libs
           do
             mkdir -p "$dir"
@@ -72,5 +72,5 @@ jobs:
           path: |
             build/libs
             forge/build/libs
-            curseforge/build/libs
+            neoforge/build/libs
             fabric/build/libs

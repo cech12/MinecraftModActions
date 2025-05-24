@@ -54,23 +54,29 @@ jobs:
       - name: Collect existing build/libs directories
         id: collect
         run: |
-          paths=""
+          paths=()
           for dir in \
-            build/libs \
-            forge/build/libs \
-            neoforge/build/libs \
-            fabric/build/libs
+            build/libs/ \
+            forge/build/libs/ \
+            neoforge/build/libs/ \
+            fabric/build/libs/
           do
             if [ -d "$dir" ]; then
               echo "Found: $dir"
-              paths="$paths $dir"
+              paths+=($dir)
             fi
           done
-          echo "paths=$paths" >> $GITHUB_OUTPUT
-
+          if [[ ${#paths[@]} -gt 0 ]]; then
+            {
+              echo 'paths<<EOF'
+              printf '%s\n' "${dirs[@]}"
+              echo 'EOF'
+            } >>"$GITHUB_OUTPUT"
+          fi
       - name: Upload existing JAR directories
         if: steps.collect.outputs.paths != ''
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build
-          path: ${{ steps.collect.outputs.paths }}
+          path: | 
+            ${{ steps.collect.outputs.paths }}

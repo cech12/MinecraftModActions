@@ -47,7 +47,6 @@ jobs:
         with:
           dependency-graph: ${{ steps.branch_values.outputs.DEPENDENCY_GRAPH }}
           validate-wrappers: true
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       - name: Execute Gradle build
         run: ./gradlew build --no-daemon --parallel

@@ -51,32 +51,26 @@ jobs:
       - name: Execute Gradle build
         run: ./gradlew build --no-daemon --parallel
         
-      - name: Collect existing build/libs directories
-        id: collect
+      - name: Ensure all build/libs directories exist
         run: |
-          paths=()
           for dir in \
-            build/libs/ \
-            forge/build/libs/ \
-            neoforge/build/libs/ \
-            fabric/build/libs/
+            build/libs \
+            forge/build/libs \
+            curseforge/build/libs \
+            fabric/build/libs
           do
-            if [ -d "$dir" ]; then
-              echo "Found: $dir"
-              paths+=($dir)
-            fi
+            mkdir -p "$dir"
+            # Add dummy file to preserve empty directory
+            touch "$dir/.keep"
+            echo "checked: $dir"
           done
-          if [[ ${#paths[@]} -gt 0 ]]; then
-            {
-              echo 'paths<<EOF'
-              printf '%s\n' "${paths[@]}"
-              echo 'EOF'
-            } >>"$GITHUB_OUTPUT"
-          fi
+
       - name: Upload existing JAR directories
-        if: steps.collect.outputs.paths != ''
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build
-          path: | 
-            ${{ steps.collect.outputs.paths }}
+          path: |
+            build/libs
+            forge/build/libs
+            curseforge/build/libs
+            fabric/build/libs

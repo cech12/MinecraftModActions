@@ -45,7 +45,7 @@ jobs:
           echo "::set-output name=version::${{fromJson(steps.get-latest-gradle-version.outputs.packageJson).version}}"
 
       - name: Setup Java ${{ inputs.java-version }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'

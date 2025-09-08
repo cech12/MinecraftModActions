@@ -70,7 +70,7 @@ jobs:
 
       - name: Get Version
         id: get_version
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.github-token }}
           result-encoding: string

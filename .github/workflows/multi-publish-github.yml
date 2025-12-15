@@ -46,7 +46,7 @@ jobs:
 
       - name: Download cached build (if any)
         id: download
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           github-token: ${{ secrets.github-token }}
           name: gradle-build

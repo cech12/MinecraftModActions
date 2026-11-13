@@ -1,0 +1,101 @@
+# This workflow starts a real dedicated server (Docker image itzg/minecraft-server) with the release jar of each loader
+# and checks that it starts cleanly. It runs the script scripts/server-starttest.sh of the calling mod repository, which
+# can also be run locally. All versions come from the gradle.properties of the mod.
+#
+# Two runs per loader: only the mod with its required dependencies, and additionally with the optional integrations
+# listed in scripts/server-starttest.deps (skipped by the script if the loader has no optional mods).
+#
+# The jars are taken from an artifact of the same workflow run, so the calling job needs "needs: build".
+
+name: "Server Start Test"
+
+on:
+  workflow_call:
+    inputs:
+      loaders:
+        description: 'JSON list of loader subprojects to test, e.g. ["fabric","forge","neoforge"]'
+        required: true
+        type: string
+      artifact-name:
+        description: 'Name of the artifact with the built jars (output of build.yml). It must be uploaded in the same workflow run, so the calling job needs "needs: build".'
+        required: false
+        type: string
+        default: gradle-build
+      timeout:
+        description: 'Seconds to wait for a healthy server'
+        required: false
+        type: number
+        default: 600
+      timeout-minutes:
+        description: 'Maximum run time of a server start job in minutes'
+        required: false
+        type: number
+        default: 30
+
+env:
+  # contract with scripts/server-starttest.sh: server data in $STARTTEST_DIR/<loader>-<mode>/data
+  STARTTEST_DIR: ${{ github.workspace }}/.server-starttest
+
+jobs:
+  server-starttest:
+    name: Server Start ${{ matrix.loader }} (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        loader: ${{ fromJSON(inputs.loaders) }}
+        mode: [ required, integrations ]
+    env:
+      LOADER: ${{ matrix.loader }}
+      MODE: ${{ matrix.mode }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Prepare
+        id: prepare
+        run: |
+          chmod +x scripts/server-starttest.sh
+          args=()
+          if [ "$MODE" = "integrations" ]; then args+=(--with-integrations); fi
+          echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
+          # empty if the script skips this run; a script error fails this step
+          key="$(scripts/server-starttest.sh "$LOADER" "${args[@]}" --print-cache-key)"
+          echo "cache-key=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Download built jars
+        if: steps.prepare.outputs.cache-key != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact-name }}
+
+      - name: Cache server installation
+        if: steps.prepare.outputs.cache-key != ''
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.STARTTEST_DIR }}/${{ matrix.loader }}-${{ matrix.mode }}/data
+          key: ${{ steps.prepare.outputs.cache-key }}
+
+      - name: Run server start test
+        env:
+          STARTTEST_TIMEOUT: ${{ inputs.timeout }}
+          ARGS: ${{ steps.prepare.outputs.args }}
+        run: |
+          status=0
+          # ARGS is intentionally unquoted (empty or --with-integrations)
+          scripts/server-starttest.sh "$LOADER" $ARGS || status=$?
+          cat "$STARTTEST_DIR/$LOADER-$MODE/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+          exit $status
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-starttest-${{ matrix.loader }}-${{ matrix.mode }}
+          if-no-files-found: ignore
+          path: ${{ env.STARTTEST_DIR }}/${{ matrix.loader }}-${{ matrix.mode }}/logs/

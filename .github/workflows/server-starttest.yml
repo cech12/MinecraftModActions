@@ -64,8 +64,9 @@ jobs:
           args=()
           if [ "$MODE" = "integrations" ]; then args+=(--with-integrations); fi
           echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
-          # empty if the script skips this run
-          echo "cache-key=$(scripts/server-starttest.sh "$LOADER" "${args[@]}" --print-cache-key)" >> "$GITHUB_OUTPUT"
+          # empty if the script skips this run; a script error fails this step
+          key="$(scripts/server-starttest.sh "$LOADER" "${args[@]}" --print-cache-key)"
+          echo "cache-key=$key" >> "$GITHUB_OUTPUT"
 
       - name: Download built jars
         if: steps.prepare.outputs.cache-key != ''

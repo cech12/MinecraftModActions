@@ -66,6 +66,7 @@ jobs:
         run: |
           shopt -s nullglob
           for report in build/gametest-report.xml */build/gametest-report.xml; do
+            [ -f "$report" ] || continue
             if [ "$report" = build/gametest-report.xml ]; then loader="(root project)"; else loader="${report%%/*}"; fi
             tests=$(grep -o '<testcase ' "$report" | wc -l)
             failures=$(grep -o '<failure' "$report" | wc -l)

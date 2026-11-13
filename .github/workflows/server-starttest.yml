@@ -1,0 +1,85 @@
+# This workflow starts a real dedicated server (Docker image itzg/minecraft-server) with the release jar of each loader
+# and checks that it starts cleanly. It runs the script scripts/server-starttest.sh of the calling mod repository, which
+# can also be run locally. All versions come from the gradle.properties of the mod.
+#
+# Two runs per loader: only the mod with its required dependencies, and additionally with the optional integrations
+# listed in scripts/server-starttest.deps.
+
+name: "Server Start Test"
+
+on:
+  workflow_call:
+    inputs:
+      loaders:
+        description: 'JSON list of loader subprojects to test, e.g. ["fabric","forge","neoforge"]'
+        required: true
+        type: string
+      artifact-name:
+        description: 'Name of the artifact with the built jars (output of build.yml)'
+        required: false
+        type: string
+        default: gradle-build
+      timeout:
+        description: 'Seconds to wait for a healthy server'
+        required: false
+        type: number
+        default: 600
+
+jobs:
+  server-starttest:
+    name: Server Start ${{ matrix.loader }} (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        loader: ${{ fromJSON(inputs.loaders) }}
+        mode: [ required, integrations ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download built jars
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact-name }}
+
+      - name: Read versions
+        id: versions
+        run: |
+          prop() { grep -E "^$1=" gradle.properties | head -1 | cut -d= -f2- | tr -d '\r'; }
+          case "${{ matrix.loader }}" in
+            fabric) loader_version="$(prop fabric_loader_version)" ;;
+            forge) loader_version="$(prop forge_version)" ;;
+            neoforge) loader_version="$(prop neoforge_version)" ;;
+          esac
+          echo "cache-key=server-starttest-${{ matrix.loader }}-${{ matrix.mode }}-$(prop minecraft_version)-${loader_version}-java$(prop java_version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache server installation
+        uses: actions/cache@v6
+        with:
+          path: .server-starttest/${{ matrix.loader }}-${{ matrix.mode }}/data
+          key: ${{ steps.versions.outputs.cache-key }}
+
+      - name: Run server start test
+        env:
+          STARTTEST_TIMEOUT: ${{ inputs.timeout }}
+        run: |
+          chmod +x scripts/server-starttest.sh
+          args=()
+          if [ "${{ matrix.mode }}" = "integrations" ]; then args+=(--with-integrations); fi
+          status=0
+          scripts/server-starttest.sh "${{ matrix.loader }}" "${args[@]}" || status=$?
+          cat ".server-starttest/${{ matrix.loader }}-${{ matrix.mode }}/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+          exit $status
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-starttest-${{ matrix.loader }}-${{ matrix.mode }}
+          if-no-files-found: ignore
+          path: .server-starttest/${{ matrix.loader }}-${{ matrix.mode }}/logs/

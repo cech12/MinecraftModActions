@@ -2,10 +2,29 @@
 This repository collects reusable GitHub workflows for my Minecraft mods (Fabric, Forge, NeoForge and multi loader
 projects).
 
+## Build
+
+### `build.yml`
+Builds the mod (`./gradlew build`) and uploads the jars as artifact `gradle-build`.
+
+| Input | Default | Description |
+|---|---|---|
+| `java-version` | (required) | Java version |
+| `gametest` | `false` | Also run the game tests (`runGameTestServer` of all projects) after the build, in the same job. This is much faster than `gametest.yml`, because the Minecraft setup and the compiled classes of the build are reused. Summary and artifact `gametest` like `gametest.yml`. |
+
+```yaml
+build:
+  uses: cech12/MinecraftModActions/.github/workflows/build.yml@main
+  with:
+    java-version: 25
+    gametest: true
+```
+
 ## Tests
 
 ### `gametest.yml`
-Runs the GameTests of the mod with `runGameTestServer`.
+Runs the GameTests of the mod with `runGameTestServer` in separate jobs. Every job prepares Minecraft again, so for
+multiloader projects the `gametest` input of `build.yml` is usually the faster choice.
 
 | Input | Default | Description |
 |---|---|---|
@@ -37,16 +56,38 @@ the required mods only and once with the optional integrations.
 | `artifact-name` | `gradle-build` | Artifact with the built jars (output of `build.yml`). It is downloaded from the same workflow run, so the calling job needs `needs: build`. |
 | `timeout` | `600` | Seconds to wait for a healthy server |
 | `timeout-minutes` | `30` | Maximum run time of a job |
+| `actions-ref` | `main` | Branch or tag of this repository to take the script from |
 
-The mod repository provides:
-- `scripts/server-starttest.sh <loader> [--with-integrations] [--print-cache-key]`, which does the actual test and can
-  also be run locally (see WoodenShears for a reference implementation). It writes its result to
-  `$STARTTEST_DIR/<loader>-<mode>/summary.md` and the logs to `$STARTTEST_DIR/<loader>-<mode>/logs/`. With
-  `--print-cache-key` it only prints the cache key of the server installation in `$STARTTEST_DIR/<loader>-<mode>/data`,
-  or nothing if the run is skipped (e.g. `--with-integrations` for a loader without optional mods).
+The test itself is `scripts/server-starttest.sh` of this repository, which works for multiloader projects
+(subprojects `fabric`/`forge`/`neoforge`) and single loader projects (jar in the root project). Run it locally in the
+root directory of a mod (needs bash, Docker, curl and jq):
+
+```bash
+./gradlew build
+curl -fsSL https://raw.githubusercontent.com/cech12/MinecraftModActions/main/scripts/server-starttest.sh | bash -s -- fabric --with-integrations
+```
+
+It takes everything from the mod repository:
+- `gradle.properties`: `minecraft_version`, `mod_id`, the loader version (`fabric_loader_version`/`loader_version`,
+  `forge_version`, `neoforge_version`) and `java_version` (optional, otherwise derived from the Minecraft version).
 - `scripts/server-starttest.deps` (optional): additional mods from Modrinth, one per line:
-  `<loader> <required|optional> <modrinth slug> <gradle.properties key of the version>`.
-- `scripts/server-starttest.allowlist` (optional): regexes of harmless log lines.
+  `<loader|*> <required|optional> <modrinth slug> <version>`. `<version>` is a `gradle.properties` key, `=<version
+  number>` or `latest`. Required mods must exist, optional mods are only installed with `--with-integrations` and are
+  skipped if they are not available for the Minecraft version yet. Their required dependencies are installed
+  automatically. A loader without optional mods skips the `--with-integrations` run.
+- `scripts/server-starttest.allowlist` (optional): extended regexes of harmless log lines, in addition to the built-in
+  ones (Netty kqueue probing and LAN advertising in containers).
+
+Example `scripts/server-starttest.deps`:
+
+```
+fabric  required  fabric-api    fabric_version
+fabric  required  cloth-config  cloth_config_version
+*       required  bucketlib     bucketlib_version
+fabric  optional  modmenu       mod_menu_version
+*       optional  jei           jei_version
+neoforge optional jade          latest
+```
 
 ```yaml
 server-starttest:

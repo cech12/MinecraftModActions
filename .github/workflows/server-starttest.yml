@@ -1,6 +1,7 @@
 # This workflow starts a real dedicated server (Docker image itzg/minecraft-server) with the release jar of each loader
-# and checks that it starts cleanly. It runs the script scripts/server-starttest.sh of the calling mod repository, which
-# can also be run locally. All versions come from the gradle.properties of the mod.
+# and checks that it starts cleanly. It runs scripts/server-starttest.sh of this repository, which can also be run
+# locally (see the script). All versions come from the gradle.properties of the mod, additional mods and harmless log
+# lines from scripts/server-starttest.deps and scripts/server-starttest.allowlist of the mod (both optional).
 #
 # Two runs per loader: only the mod with its required dependencies, and additionally with the optional integrations
 # listed in scripts/server-starttest.deps (skipped by the script if the loader has no optional mods).
@@ -31,10 +32,16 @@ on:
         required: false
         type: number
         default: 30
+      actions-ref:
+        description: 'Branch or tag of cech12/MinecraftModActions to take the server start script from'
+        required: false
+        type: string
+        default: main
 
 env:
   # contract with scripts/server-starttest.sh: server data in $STARTTEST_DIR/<loader>-<mode>/data
   STARTTEST_DIR: ${{ github.workspace }}/.server-starttest
+  STARTTEST_SCRIPT: ${{ github.workspace }}/.minecraft-mod-actions/scripts/server-starttest.sh
 
 jobs:
   server-starttest:
@@ -57,15 +64,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Checkout server start script
+        uses: actions/checkout@v7
+        with:
+          repository: cech12/MinecraftModActions
+          ref: ${{ inputs.actions-ref }}
+          path: .minecraft-mod-actions
+          sparse-checkout: scripts
+          persist-credentials: false
+
       - name: Prepare
         id: prepare
         run: |
-          chmod +x scripts/server-starttest.sh
           args=()
           if [ "$MODE" = "integrations" ]; then args+=(--with-integrations); fi
           echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
           # empty if the script skips this run; a script error fails this step
-          key="$(scripts/server-starttest.sh "$LOADER" "${args[@]}" --print-cache-key)"
+          key="$(bash "$STARTTEST_SCRIPT" "$LOADER" "${args[@]}" --print-cache-key)"
           echo "cache-key=$key" >> "$GITHUB_OUTPUT"
 
       - name: Download built jars
@@ -88,7 +103,7 @@ jobs:
         run: |
           status=0
           # ARGS is intentionally unquoted (empty or --with-integrations)
-          scripts/server-starttest.sh "$LOADER" $ARGS || status=$?
+          bash "$STARTTEST_SCRIPT" "$LOADER" $ARGS || status=$?
           cat "$STARTTEST_DIR/$LOADER-$MODE/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
           exit $status
 

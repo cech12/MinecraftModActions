@@ -318,8 +318,8 @@ if ! grep -qiE "Done \([0-9.]+s\)!" "$SERVER_LOG"; then
     FAILED=1
 fi
 # The mod must be in the mod list of the loader (otherwise a wrong jar, metadata or environment would pass silently):
-# Fabric "	- modid 1.0", NeoForge "Mod Name 1.0 (modid)" / " - modid (jar(...))", Forge "Found valid mod file ... with {modid}"
-LOADED_PATTERN="^[[:space:]]*- ${MOD_ID}( |\$)|\(${MOD_ID}\)|- ${MOD_ID} \(jar|mod file .*\{([^}]*[ ,])?${MOD_ID}([ ,][^}]*)?\}"
+# Fabric "	- modid 1.0", NeoForge " - modid (jar(...))", Forge "Found valid mod file ... with {modid}"
+LOADED_PATTERN="^[[:space:]]*- ${MOD_ID}( |\$)|^[[:space:]]*- ${MOD_ID} \(jar\(|Found valid mod file .*\{([^}]*[ ,])?${MOD_ID}([ ,][^}]*)?\}"
 if ! grep -qsE "$LOADED_PATTERN" "$WORK"/logs/*.log; then
     log "**The mod $MOD_ID was not loaded** (not found in the mod list of the server log)."
     FAILED=1

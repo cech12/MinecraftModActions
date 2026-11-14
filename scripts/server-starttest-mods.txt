@@ -10,8 +10,6 @@
 # Mod ids that are equal to their Modrinth project (fabric-api, cloth-config, jei, jade, modmenu, curios, bucketlib, ...)
 # do not need an entry.
 
-# old id of Fabric API
-fabric                  fabric-api
 # Cloth Config on Forge/NeoForge
 cloth_config            cloth-config
 roughlyenoughitems      rei

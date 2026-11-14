@@ -100,12 +100,23 @@ Mod ids are used as Modrinth project names. Mod ids with another project name ar
 [`scripts/server-starttest-mods.txt`](scripts/server-starttest-mods.txt) (e.g. `roughlyenoughitems` → `rei`). If a
 required dependency is not found, the summary of the test says so; add the mod id there.
 
-Modules of Fabric API (`fabric-api-base`, `fabric-networking-api-v1`, ...) are installed as `fabric-api`. All installed
-dependencies must appear in the mod list of the loader as well, so a Modrinth project with the same name but another
-mod fails the test. To reproduce a failure with another loader version, set `STARTTEST_LOADER_VERSION`.
+All installed dependencies must appear in the mod list of the loader as well, so a Modrinth project with the same name
+but another mod fails the test. To reproduce a failure with another loader version, set `STARTTEST_LOADER_VERSION`.
 
-The test is meant for Minecraft 26.x and newer (older NeoForge versions are published as `net.neoforged:forge` and are
-not found).
+Limits:
+- The test is meant for multiloader mods for Minecraft 26.x and newer (older NeoForge versions are published as
+  `net.neoforged:forge` and are not found). Fabric mods declare Fabric API as `fabric-api`; single Fabric API modules
+  (`fabric-networking-api-v1`, ...) and the old id `fabric` are not supported.
+- The version ranges of the metadata refer to the mod versions, the versions on Modrinth are compared by their freely
+  chosen version numbers. Common prefixes like `v1.2`, `26.3-1.2` or `26.3_neo-1.2` are removed before the comparison.
+  If no Modrinth version number fits a range at all, the summary says so ("no Modrinth version number fits the range"),
+  instead of "not available".
+- `build` takes the version of the `gradle.properties` key named like the dependency (`cloth_config_version` for
+  `cloth-config`, `mod_menu_version` for `modmenu`, ...), otherwise any other dependency version that matches. If none
+  matches, the minimum version is used and the summary says so.
+- `minimum` takes the oldest version that fits the range. Without a lower bound (`*` or no range) this is the oldest
+  version for the Minecraft version at all, possibly an early beta. A failure then means that the declared range is too
+  loose.
 
 Weekly test with the newest versions (in the mod repository, e.g. `.github/workflows/server-starttest-newest.yml`;
 scheduled workflows run on the default branch):

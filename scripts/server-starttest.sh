@@ -21,7 +21,7 @@
 #                        (empty if the run is skipped) and exit. Used by the CI.
 #
 # For multiloader projects with one subproject per loader (fabric/forge/neoforge), like the MultiLoader template, from
-# Minecraft 26.x on. Requirements: bash, docker, curl, python3 (3.11 or newer).
+# Minecraft 26.x on. Fabric mods declare Fabric API as "fabric-api" (single Fabric API modules are not supported). Requirements: bash, docker, curl, python3 (3.11 or newer).
 #
 # Everything comes from the mod repository and its built jar:
 #   gradle.properties                    minecraft_version, mod_id, java_version and the build versions (*_version)
@@ -55,7 +55,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --with-integrations) MODE="integrations" ;;
         --print-cache-key) PRINT_CACHE_KEY=1 ;;
-        --versions) VERSIONS="${2:-}"; [ $# -gt 0 ] && shift ;;
+        --versions) [ $# -gt 1 ] || usage; VERSIONS="$2"; shift ;;
         *) echo "Unknown option: $1" >&2; usage ;;
     esac
     shift
@@ -167,6 +167,8 @@ else
     RESOLVE_FAILURE=""
 fi
 rm -f "$RESOLVE_ERROR"
+# (Python on Windows writes CRLF)
+RESOLVED="${RESOLVED//$'\r'/}"
 field() { awk -F'\t' -v key="$1" -v n="$2" '$1 == key { print $n; exit }' <<< "$RESOLVED"; }
 
 SKIP=""
@@ -230,12 +232,15 @@ LOADER_ENV=(-e "TYPE=$LOADER_TYPE" -e "$LOADER_VERSION_ENV=$LOADER_VERSION")
 MODRINTH_IDS=()
 DEPENDENCY_IDS=()
 SKIPPED=()
-while IFS=$'\t' read -r line_type kind dep_id project version_id version_number dep_range; do
+while IFS=$'\t' read -r line_type kind dep_id project version_id version_number dep_range note; do
     case "$line_type" in
         MOD)
             MODRINTH_IDS+=("${project}:${version_id}")
             DEPENDENCY_IDS+=("$dep_id")
-            log "- $kind: $project $version_number (range $dep_range)$([ "$project" != "$dep_id" ] && echo ", mod id $dep_id")" ;;
+            details="range $dep_range"
+            [ "$project" != "$dep_id" ] && details="$details, mod id $dep_id"
+            [ -n "${note:-}" ] && details="$details, $note"
+            log "- $kind: $project $version_number ($details)" ;;
         SKIPPED)
             # (fields: SKIPPED <mod id> <reason>)
             SKIPPED+=("$kind")

@@ -5,8 +5,8 @@ The dependencies and their version ranges are read from the metadata of the buil
 neoforge.mods.toml, mods.toml). Every version that is chosen satisfies these ranges (lower and upper bounds).
 
 Version sets (--versions):
-  build    loader version of gradle.properties, dependencies in the version of gradle.properties (a *_version value
-           that matches a Modrinth version), otherwise the minimum version
+  build    loader version of gradle.properties, dependencies in the version of gradle.properties (preferably the
+           *_version key named like the mod id, e.g. cloth_config_version), otherwise the minimum version
   minimum  oldest loader and dependency versions that satisfy the ranges of the metadata
   newest   newest loader and dependency versions that satisfy the ranges (releases preferred)
 
@@ -15,7 +15,7 @@ Output (tab separated lines on stdout):
   BUILD_LOADER_VERSION  <version of gradle.properties or "">
   OPTIONAL_COUNT   <number of installed optional dependencies (with --integrations), client only mods excluded>
   SAME_AS_BUILD    (only with --versions minimum, if the result equals the build versions)
-  MOD              <required|optional> <mod id> <modrinth project> <version id> <version number> <range>
+  MOD              <required|optional> <mod id> <modrinth project> <version id> <version number> <range> <note>
   SKIPPED          <mod id> <reason>   (optional dependencies that are not available)
 Errors are printed to stderr, the exit code is 1 (resolution failed) or 2 (usage, broken jar).
 """
@@ -264,9 +264,6 @@ def read_mapping(path):
 def modrinth_projects(dep_id, mapping):
     if dep_id in mapping:
         return [] if mapping[dep_id] == ["-"] else mapping[dep_id]
-    # modules of Fabric API (fabric-api-base, fabric-networking-api-v1, ...)
-    if dep_id == "fabric-api-base" or re.match(r"^fabric-.+-v\d+$", dep_id):
-        return ["fabric-api"]
     return [dep_id]
 
 
@@ -327,17 +324,52 @@ def modrinth_project(project):
     return _projects[project]
 
 
-def build_version_values(properties):
-    return [value for key, value in properties.items() if key.endswith("_version") and value]
+# gradle.properties keys that are no versions of dependencies
+NO_DEPENDENCY_VERSION_KEYS = {"minecraft_version", "java_version", "mod_version", "fabric_loader_version",
+                              "forge_version", "neoforge_version", "neo_form_version", "parchment_version"}
 
 
-def matches_build_value(version_number, values):
-    return any(version_number == v or version_number.startswith(v + "+") or version_number.startswith(v + "-")
-               for v in values)
+def normalized(name):
+    return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, build_values, server_only=False):
-    """Returns (project, version) or (None, reason). With server_only, client only projects are not used."""
+def build_version_values(properties, dep_id, project):
+    """Versions of gradle.properties that may be the build version of the dependency: first the values of keys that
+    belong to the mod id or project (cloth_config_version -> cloth-config, mod_menu_version -> modmenu, jade_fabric_version
+    -> jade), then all other dependency versions as fallback."""
+    names = {normalized(dep_id), normalized(project)}
+    named, other = [], []
+    for key, value in properties.items():
+        if not key.endswith("_version") or not value or key in NO_DEPENDENCY_VERSION_KEYS or "range" in key:
+            continue
+        key_name = normalized(key[:-len("_version")])
+        if any(key_name.startswith(n) or n.startswith(key_name) for n in names):
+            named.append(value)
+        else:
+            other.append(value)
+    return named, other
+
+
+def find_build_version(candidates, values):
+    """Candidate with exactly one of the values as version number, otherwise with the value plus a "+"/"-" suffix."""
+    for exact in (True, False):
+        for value in values:
+            for version in reversed(candidates):
+                number = version["version_number"]
+                if number == value if exact else (number.startswith(value + "+") or number.startswith(value + "-")):
+                    return version
+    return None
+
+
+def comparable_version(version_number, mc_version):
+    """Modrinth version number without common prefixes that are no part of the mod version ("v1.2", "26.3-1.2",
+    "26.3_neo-1.2"), so that it can be compared with the version range of the metadata."""
+    number = re.sub(r"^[vV](?=\d)", "", version_number)
+    return re.sub(rf"^{re.escape(mc_version)}[-_+](?:(?:fabric|forge|neoforge|neo)[-_])?", "", number)
+
+
+def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, properties, server_only=False):
+    """Returns (project, version, note) or (None, reason, None). With server_only, client only projects are not used."""
     reasons = []
     for project in projects:
         if server_only:
@@ -349,17 +381,24 @@ def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode,
         if versions is None:
             reasons.append(f"{project}: no Modrinth project")
             continue
-        candidates = [v for v in versions if satisfies(v["version_number"], alternatives)]
+        if not versions:
+            reasons.append(f"{project}: no version for {loader} {mc_version}")
+            continue
+        candidates = [v for v in versions if satisfies(comparable_version(v["version_number"], mc_version), alternatives)]
         if not candidates:
-            reasons.append(f"{project}: no version for {loader} {mc_version} in {range_text(alternatives)}")
+            # the Modrinth version numbers are chosen freely by the author and can differ from the mod version
+            reasons.append(f"{project}: no Modrinth version number fits the range {range_text(alternatives)} of the "
+                           f"metadata (version numbers: {', '.join(v['version_number'] for v in versions[-3:])}); the "
+                           "Modrinth version numbers may not match the mod versions")
             continue
         if mode == "build":
-            built = [v for v in candidates if matches_build_value(v["version_number"], build_values)]
-            if built:
-                return project, built[-1]
-            return project, candidates[0]
-        return project, choose(candidates, mode, prefer=lambda v: v["version_type"] == "release")
-    return None, "; ".join(reasons) or "ignored"
+            named, other = build_version_values(properties, dep_id, project)
+            version = find_build_version(candidates, named) or find_build_version(candidates, other)
+            if version is not None:
+                return project, version, ""
+            return project, candidates[0], "no build version in gradle.properties, minimum version used"
+        return project, choose(candidates, mode, prefer=lambda v: v["version_type"] == "release"), ""
+    return None, "; ".join(reasons) or "ignored", None
 
 
 def resolve(args, mode):
@@ -379,7 +418,6 @@ def resolve(args, mode):
     if args.loader_version:
         loader_version = args.loader_version
     mapping = read_mapping(args.mapping)
-    build_values = build_version_values(args.properties)
     mods, skipped, seen_projects = [], [], set()
     for kind, dep_id, alternatives in sorted(dependencies, key=lambda d: (d[0] != "required", d[1])):
         if kind == "optional" and not args.integrations:
@@ -388,8 +426,8 @@ def resolve(args, mode):
         if not projects:
             continue
         # optional client only mods (e.g. Mod Menu) are not loaded on a server, so they are not installed
-        project, version = resolve_dependency(dep_id, alternatives, projects, args.loader, args.mc_version, mode,
-                                              build_values, server_only=kind == "optional")
+        project, version, note = resolve_dependency(dep_id, alternatives, projects, args.loader, args.mc_version,
+                                                    mode, args.properties, server_only=kind == "optional")
         if project is None:
             if kind == "required":
                 raise Failure(f"required dependency {dep_id} ({range_text(alternatives)}) is not available: {version}. "
@@ -400,7 +438,7 @@ def resolve(args, mode):
         if project in seen_projects:
             continue
         seen_projects.add(project)
-        mods.append((kind, dep_id, project, version["id"], version["version_number"], range_text(alternatives)))
+        mods.append((kind, dep_id, project, version["id"], version["version_number"], range_text(alternatives), note))
     # optional dependencies that are installed (only counted with --integrations)
     optional_count = sum(1 for mod in mods if mod[0] == "optional")
     return loader_version, range_text(loader_range), optional_count, mods, skipped

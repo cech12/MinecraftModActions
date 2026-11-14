@@ -22,7 +22,8 @@ on:
 
 jobs:
   build:
-    name: Build
+    # the name stays "Build" without game tests, so required status checks of other mods keep matching
+    name: ${{ inputs.gametest && 'Build & Game Test' || 'Build' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read

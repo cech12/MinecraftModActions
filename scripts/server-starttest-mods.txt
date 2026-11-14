@@ -1,0 +1,22 @@
+# Central mapping of mod ids to Modrinth projects for the server start test (server-starttest.sh).
+#
+# The dependencies of a mod are read from the metadata of its jar (fabric.mod.json, neoforge.mods.toml, mods.toml) and
+# installed from Modrinth. A mod id is used as Modrinth project name, unless it is listed here:
+#
+#   <mod id>  <modrinth project> [<further projects, tried in order>]
+#   <mod id>  -                                                         (ignore this dependency)
+#
+# Several projects are tried in order; the first one with a version for the loader and Minecraft version is used.
+# Mod ids that are equal to their Modrinth project (fabric-api, cloth-config, jei, jade, modmenu, curios, bucketlib, ...)
+# do not need an entry.
+
+# Cloth Config on Forge/NeoForge
+cloth_config            cloth-config
+roughlyenoughitems      rei
+theoneprobe             the-one-probe
+# Trinkets is continued as "Trinkets Updated" since Minecraft 1.21.11
+trinkets                trinkets trinkets-updated
+trinkets_updated        trinkets-updated
+# no module of Fabric API, although the id looks like one (fabric-*-vN ids that are not listed here are rejected with
+# "declare fabric-api instead")
+fabric-permissions-api-v0   fabric-permissions-api

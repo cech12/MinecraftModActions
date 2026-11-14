@@ -58,27 +58,37 @@ the required mods only and once with the optional integrations.
 |---|---|---|
 | `loaders` | (required) | JSON list of loader subprojects, e.g. `["fabric","forge","neoforge"]` |
 | `artifact-name` | `gradle-build` | Artifact with the built jars (output of `build.yml`). It is downloaded from the same workflow run, so the calling job needs `needs: build`. |
-| `timeout` | `600` | Seconds to wait for a healthy server |
+| `versions` | `["build", "minimum"]` | JSON list of version sets, see below. Use `["newest"]` in a scheduled workflow. |
+| `timeout` | `600` | Seconds to wait for the server start |
 | `timeout-minutes` | `30` | Maximum run time of a job |
 | `actions-ref` | `main` | Branch or tag of this repository to take the script from. **Set it to the same ref as in `uses: …/server-starttest.yml@<ref>` whenever that ref is not `main`** (a tag or a feature branch), otherwise the workflow of one ref runs the script of `main`. GitHub does not tell a reusable workflow its own ref, so this cannot be detected automatically. |
 
 The test itself is `scripts/server-starttest.sh` of this repository. It supports multiloader projects with one
 subproject per loader (`fabric`/`forge`/`neoforge`, like the MultiLoader template). Run it locally in the
-root directory of a mod (needs bash, Docker, curl and jq):
+root directory of a mod (needs bash, Docker, curl and Python 3.11+):
 
 ```bash
 ./gradlew build
-curl -fsSL https://raw.githubusercontent.com/cech12/MinecraftModActions/main/scripts/server-starttest.sh | bash -s -- fabric --with-integrations
+curl -fsSL https://raw.githubusercontent.com/cech12/MinecraftModActions/main/scripts/server-starttest.sh | bash -s -- fabric --versions newest --with-integrations
 ```
 
-It takes everything from the mod repository:
-- `gradle.properties`: `minecraft_version`, `mod_id`, `java_version` and the loader version (`fabric_loader_version`,
-  `forge_version`, `neoforge_version`).
-- `scripts/server-starttest.deps` (optional): additional mods from Modrinth, one per line:
-  `<loader|*> <required|optional> <modrinth slug> <version>`. `<version>` is a `gradle.properties` key, `=<version
-  number>` or `latest`. Required mods must exist, optional mods are only installed with `--with-integrations` and are
-  skipped if they are not available for the Minecraft version yet. Their required dependencies are installed
-  automatically. A loader without optional mods skips the `--with-integrations` run.
+The server runs with the Minecraft version of the mod. Loader and dependencies are chosen by the version set, always
+within the version ranges of the mod metadata (lower **and** upper bounds, e.g. `"fabricloader": ">=0.19.5 <0.21"` or
+`versionRange="[66,67)"`):
+
+| Version set | Loader and dependencies | Use |
+|---|---|---|
+| `build` | the versions of `gradle.properties` the mod is built with (a `*_version` value that matches a Modrinth version; otherwise the minimum) | every build, before a release |
+| `minimum` | the oldest versions the mod allows (lower bounds of the ranges). Skipped if they equal the build versions. | every build, before a release |
+| `newest` | the newest versions (releases preferred) | scheduled, e.g. weekly: notices when a new loader or dependency release breaks the mod, without blocking releases |
+
+It takes everything from the mod repository and its built jar:
+- `gradle.properties`: `minecraft_version`, `mod_id`, `java_version` and the build versions (`*_version`).
+- Dependencies: read from the metadata in the jar. On Fabric `depends` are required and `recommends`/`suggests` are
+  optional, on Forge/NeoForge the `[[dependencies]]` of `mods.toml`/`neoforge.mods.toml` (client only dependencies are
+  ignored, as well as libraries bundled as jar in jar). Required dependencies are always installed and must exist for
+  the Minecraft version. Optional dependencies are only installed in the integrations run and are skipped if they are
+  not available yet. Their own required dependencies are installed automatically. A loader without optional dependencies skips the integrations run.
 - `scripts/server-starttest.allowlist` (optional): extended regexes of harmless log lines, in addition to the built-in
   ones (Netty kqueue probing and LAN advertising in containers).
 
@@ -86,16 +96,51 @@ The test fails if the server does not log "Done" within the timeout, stops again
 report, logs exceptions, mixin errors or errors mentioning the mod id, or if the mod is not in the mod list of the
 loader (wrong jar, metadata or environment).
 
-Example `scripts/server-starttest.deps`:
+Mod ids are used as Modrinth project names. Mod ids with another project name are mapped centrally for all mods in
+[`scripts/server-starttest-mods.txt`](scripts/server-starttest-mods.txt) (e.g. `roughlyenoughitems` → `rei`). If a
+required dependency is not found, the summary of the test says so; add the mod id there.
 
+All installed dependencies must appear in the mod list of the loader as well, so a Modrinth project with the same name
+but another mod fails the test. To reproduce a failure with another loader version, set `STARTTEST_LOADER_VERSION`.
+
+Limits:
+- The test is meant for multiloader mods for Minecraft 26.x and newer (older NeoForge versions are published as
+  `net.neoforged:forge` and are not found). Fabric mods declare Fabric API as `fabric-api`; single Fabric API modules
+  (`fabric-networking-api-v1`, ...) and the old id `fabric` are not supported.
+- The version ranges of the metadata refer to the mod versions, the versions on Modrinth are compared by their freely
+  chosen version numbers. Common prefixes like `v1.2`, `26.3-1.2` or `26.3_neo-1.2` are removed before the comparison.
+  If no Modrinth version number fits a range at all, the summary says so ("no Modrinth version number fits the range"),
+  instead of "not available".
+- `build` takes the version of the `gradle.properties` key named like the dependency (`cloth_config_version` for
+  `cloth-config`, `mod_menu_version` for `modmenu`, ...), otherwise any other dependency version that matches. If none
+  matches, the minimum version is used and the summary says so.
+- `minimum` takes the oldest version that fits the range. Without a lower bound (`*` or no range) this is the oldest
+  version for the Minecraft version at all, possibly an early beta. A failure then means that the declared range is too
+  loose.
+
+Weekly test with the newest versions (in the mod repository, e.g. `.github/workflows/server-starttest-newest.yml`;
+scheduled workflows run on the default branch):
+
+```yaml
+name: Server Start Test (newest versions)
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+jobs:
+  build:
+    uses: cech12/MinecraftModActions/.github/workflows/build.yml@main
+    with:
+      java-version: 25
+  server-starttest:
+    needs: build
+    uses: cech12/MinecraftModActions/.github/workflows/server-starttest.yml@main
+    with:
+      loaders: '["fabric", "forge", "neoforge"]'
+      versions: '["newest"]'
 ```
-fabric  required  fabric-api    fabric_version
-fabric  required  cloth-config  cloth_config_version
-*       required  bucketlib     bucketlib_version
-fabric  optional  modmenu       mod_menu_version
-*       optional  jei           jei_version
-neoforge optional jade          latest
-```
+
+In the CI workflow of a mod (build and minimum versions, before publishing):
 
 ```yaml
 server-starttest:

@@ -47,7 +47,8 @@ done
 case "$LOADER" in
     fabric)   LOADER_TYPE=FABRIC;   LOADER_VERSION_KEYS="fabric_loader_version loader_version"; LOADER_VERSION_ENV=FABRIC_LOADER_VERSION ;;
     forge)    LOADER_TYPE=FORGE;    LOADER_VERSION_KEYS="forge_version";                        LOADER_VERSION_ENV=FORGE_VERSION ;;
-    neoforge) LOADER_TYPE=NEOFORGE; LOADER_VERSION_KEYS="neoforge_version neo_version";         LOADER_VERSION_ENV=NEOFORGE_VERSION ;;
+    # NeoForge 1.20.1 projects (fork of Forge 47.1) often name the NeoForge version forge_version
+    neoforge) LOADER_TYPE=NEOFORGE; LOADER_VERSION_KEYS="neoforge_version neo_version forge_version"; LOADER_VERSION_ENV=NEOFORGE_VERSION ;;
     *) usage ;;
 esac
 
@@ -61,22 +62,29 @@ fi
 if [ -f "$LOADER/build.gradle" ] || [ -f "$LOADER/build.gradle.kts" ]; then
     LIBS="$LOADER/build/libs"
 else
-    # single loader project: the requested loader must be the loader of the root project
-    RES="src/main/resources"
-    if [ -f "$RES/fabric.mod.json" ]; then ROOT_LOADER=fabric
-    elif [ -f "$RES/META-INF/neoforge.mods.toml" ]; then ROOT_LOADER=neoforge
-    elif [ -f "$RES/META-INF/mods.toml" ]; then ROOT_LOADER=forge
-    else ROOT_LOADER=""
-    fi
-    if [ -z "$ROOT_LOADER" ]; then
-        echo "No subproject $LOADER and no mod metadata (fabric.mod.json, neoforge.mods.toml, mods.toml) in $RES." >&2
-        exit 2
-    fi
-    if [ "$ROOT_LOADER" != "$LOADER" ]; then
-        echo "This is a single loader project for $ROOT_LOADER, not for $LOADER. Remove $LOADER from the loaders list." >&2
-        exit 2
-    fi
     LIBS="build/libs"
+    # Single loader project: the requested loader must be one the root project can run on. Detected from the mod
+    # metadata (also as template of the NeoForge MDK) or, without metadata, from the Gradle plugin.
+    ROOT_LOADERS=""
+    for dir in src/main/resources src/main/templates; do
+        if [ -f "$dir/fabric.mod.json" ]; then ROOT_LOADERS="fabric"; break; fi
+        if [ -f "$dir/META-INF/neoforge.mods.toml" ]; then ROOT_LOADERS="neoforge"; break; fi
+        # Forge, and NeoForge up to Minecraft 1.20.4 (e.g. NeoForge 1.20.1 mods that also run on Forge)
+        if [ -f "$dir/META-INF/mods.toml" ]; then ROOT_LOADERS="forge neoforge"; break; fi
+    done
+    if [ -z "$ROOT_LOADERS" ]; then
+        PLUGINS="$(cat build.gradle build.gradle.kts settings.gradle settings.gradle.kts 2>/dev/null || true)"
+        if grep -qE "fabric-loom" <<< "$PLUGINS"; then ROOT_LOADERS="fabric"
+        elif grep -qE "net\.neoforged\.moddev\.legacyforge|net\.minecraftforge\.gradle" <<< "$PLUGINS"; then ROOT_LOADERS="forge"
+        elif grep -qE "net\.neoforged\.(moddev|gradle)" <<< "$PLUGINS"; then ROOT_LOADERS="neoforge"
+        fi
+    fi
+    if [ -z "$ROOT_LOADERS" ]; then
+        echo "Warning: the loader of the root project could not be detected, testing it as $LOADER." >&2
+    elif [[ " $ROOT_LOADERS " != *" $LOADER "* ]]; then
+        echo "This is a single loader project for ${ROOT_LOADERS// / or }, not for $LOADER. Remove $LOADER from the loaders list." >&2
+        exit 2
+    fi
 fi
 
 DEPS_FILE="scripts/server-starttest.deps"

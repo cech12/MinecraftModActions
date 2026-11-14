@@ -428,7 +428,9 @@ def resolve(args, mode):
     for kind, dep_id, alternatives in sorted(dependencies, key=lambda d: (d[0] != "required", d[1])):
         if kind == "optional" and not args.integrations:
             continue
-        if args.loader == "fabric" and (dep_id in ("fabric", "fabric-api-base") or re.match(r"^fabric-.+-v\d+$", dep_id)):
+        # (mods with a similar id that are no part of Fabric API are listed in the mapping, e.g. fabric-permissions-api-v0)
+        if args.loader == "fabric" and dep_id not in mapping and (
+                dep_id in ("fabric", "fabric-api-base") or re.match(r"^fabric-.+-v\d+$", dep_id)):
             message = (f"the dependency {dep_id} is a module or an old id of Fabric API, which is not supported: "
                        "declare fabric-api instead")
             if kind == "required":

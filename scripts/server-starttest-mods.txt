@@ -17,3 +17,6 @@ theoneprobe             the-one-probe
 # Trinkets is continued as "Trinkets Updated" since Minecraft 1.21.11
 trinkets                trinkets trinkets-updated
 trinkets_updated        trinkets-updated
+# no module of Fabric API, although the id looks like one (fabric-*-vN ids that are not listed here are rejected with
+# "declare fabric-api instead")
+fabric-permissions-api-v0   fabric-permissions-api

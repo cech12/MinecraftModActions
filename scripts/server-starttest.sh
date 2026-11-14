@@ -13,12 +13,12 @@
 #   --print-cache-key    only print the cache key of the server installation in $STARTTEST_DIR/<loader>-<mode>/data
 #                        (empty if the run is skipped, see above) and exit. Used by the CI.
 #
-# Works for multiloader projects (subprojects fabric/forge/neoforge) and for single loader projects (jar in the root
-# project). Requirements: bash, docker, curl, jq.
+# For multiloader projects with one subproject per loader (fabric/forge/neoforge), like the MultiLoader template.
+# Requirements: bash, docker, curl, jq.
 #
 # Everything comes from the mod repository:
-#   gradle.properties                    minecraft_version, mod_id and the loader version (fabric_loader_version or
-#                                        loader_version, forge_version, neoforge_version), optional java_version
+#   gradle.properties                    minecraft_version, mod_id, java_version and the loader version
+#                                        (fabric_loader_version, forge_version or neoforge_version)
 #   scripts/server-starttest.deps        (optional) additional mods from Modrinth, one per line:
 #                                        <loader|*> <required|optional> <modrinth slug> <version>
 #                                        <version>: a gradle.properties key, "=<version number>" or "latest"
@@ -45,10 +45,9 @@ for arg in "$@"; do
     esac
 done
 case "$LOADER" in
-    fabric)   LOADER_TYPE=FABRIC;   LOADER_VERSION_KEYS="fabric_loader_version loader_version"; LOADER_VERSION_ENV=FABRIC_LOADER_VERSION ;;
-    forge)    LOADER_TYPE=FORGE;    LOADER_VERSION_KEYS="forge_version";                        LOADER_VERSION_ENV=FORGE_VERSION ;;
-    # NeoForge 1.20.1 projects (fork of Forge 47.1) often name the NeoForge version forge_version
-    neoforge) LOADER_TYPE=NEOFORGE; LOADER_VERSION_KEYS="neoforge_version neo_version forge_version"; LOADER_VERSION_ENV=NEOFORGE_VERSION ;;
+    fabric)   LOADER_TYPE=FABRIC;   LOADER_VERSION_KEY=fabric_loader_version; LOADER_VERSION_ENV=FABRIC_LOADER_VERSION ;;
+    forge)    LOADER_TYPE=FORGE;    LOADER_VERSION_KEY=forge_version;         LOADER_VERSION_ENV=FORGE_VERSION ;;
+    neoforge) LOADER_TYPE=NEOFORGE; LOADER_VERSION_KEY=neoforge_version;      LOADER_VERSION_ENV=NEOFORGE_VERSION ;;
     *) usage ;;
 esac
 
@@ -58,73 +57,33 @@ if [ ! -f gradle.properties ]; then
     echo "gradle.properties not found in $MOD_DIR. Run the script in the root directory of the mod repository." >&2
     exit 2
 fi
-# Multiloader project (subproject per loader) or single loader project (jar in the root project)
-if [ -f "$LOADER/build.gradle" ] || [ -f "$LOADER/build.gradle.kts" ]; then
-    LIBS="$LOADER/build/libs"
-else
-    LIBS="build/libs"
-    # Single loader project: the requested loader must be one the root project can run on. Detected from the mod
-    # metadata (also as template of the NeoForge MDK) or, without metadata, from the Gradle plugin.
-    ROOT_LOADERS=""
-    for dir in src/main/resources src/main/templates; do
-        if [ -f "$dir/fabric.mod.json" ]; then ROOT_LOADERS="fabric"; break; fi
-        if [ -f "$dir/META-INF/neoforge.mods.toml" ]; then ROOT_LOADERS="neoforge"; break; fi
-        # Forge, and NeoForge up to Minecraft 1.20.4 (e.g. NeoForge 1.20.1 mods that also run on Forge)
-        if [ -f "$dir/META-INF/mods.toml" ]; then ROOT_LOADERS="forge neoforge"; break; fi
-    done
-    if [ -z "$ROOT_LOADERS" ]; then
-        PLUGINS="$(cat build.gradle build.gradle.kts settings.gradle settings.gradle.kts 2>/dev/null || true)"
-        if grep -qE "fabric-loom" <<< "$PLUGINS"; then ROOT_LOADERS="fabric"
-        elif grep -qE "net\.neoforged\.moddev\.legacyforge|net\.minecraftforge\.gradle" <<< "$PLUGINS"; then ROOT_LOADERS="forge"
-        elif grep -qE "net\.neoforged\.(moddev|gradle)" <<< "$PLUGINS"; then ROOT_LOADERS="neoforge"
-        fi
-    fi
-    if [ -z "$ROOT_LOADERS" ]; then
-        echo "Warning: the loader of the root project could not be detected, testing it as $LOADER." >&2
-    elif [[ " $ROOT_LOADERS " != *" $LOADER "* ]]; then
-        echo "This is a single loader project for ${ROOT_LOADERS// / or }, not for $LOADER. Remove $LOADER from the loaders list." >&2
-        exit 2
-    fi
+if [ ! -f "$LOADER/build.gradle" ] && [ ! -f "$LOADER/build.gradle.kts" ]; then
+    echo "Subproject $LOADER not found. The server start test supports multiloader projects with one subproject per loader." >&2
+    exit 2
 fi
+LIBS="$LOADER/build/libs"
 
 DEPS_FILE="scripts/server-starttest.deps"
 ALLOWLIST_FILE="scripts/server-starttest.allowlist"
 
-# value of the first existing gradle.properties key (empty if none exists)
+# value of a gradle.properties key (empty if it does not exist)
 prop_or_empty() {
-    local key value
-    for key in "$@"; do
-        value="$(grep -E "^${key}[[:space:]]*=" gradle.properties | head -1 | cut -d= -f2- | tr -d '\r' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
-        if [ -n "$value" ]; then printf '%s' "$value"; return 0; fi
-    done
-    return 0
+    grep -E "^$1[[:space:]]*=" gradle.properties | head -1 | cut -d= -f2- | tr -d '\r' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g'
 }
 prop() {
     local value
-    value="$(prop_or_empty "$@")"
+    value="$(prop_or_empty "$1")"
     if [ -z "$value" ]; then
-        echo "Property $* is missing in gradle.properties" >&2
+        echo "Property $1 is missing in gradle.properties" >&2
         exit 2
     fi
     printf '%s' "$value"
 }
 
 MC_VERSION="$(prop minecraft_version)"
-MOD_ID="$(prop mod_id modid archives_base_name)"
-LOADER_VERSION="$(prop $LOADER_VERSION_KEYS)"
-# Forge versions are sometimes written with the Minecraft version in front (1.20.1-47.1.54)
-LOADER_VERSION="${LOADER_VERSION#"${MC_VERSION}-"}"
-JAVA_VERSION="$(prop_or_empty java_version)"
-if [ -z "$JAVA_VERSION" ]; then
-    # Java version that the Minecraft version needs
-    case "$MC_VERSION" in
-        1.1[0-6]|1.1[0-6].*|1.[0-9]|1.[0-9].*) JAVA_VERSION=8 ;;
-        1.17|1.17.*) JAVA_VERSION=16 ;;
-        1.18|1.18.*|1.19|1.19.*|1.20|1.20.[0-4]) JAVA_VERSION=17 ;;
-        1.20.*|1.21|1.21.*) JAVA_VERSION=21 ;;
-        *) JAVA_VERSION=25 ;;
-    esac
-fi
+MOD_ID="$(prop mod_id)"
+LOADER_VERSION="$(prop "$LOADER_VERSION_KEY")"
+JAVA_VERSION="$(prop java_version)"
 IMAGE="${STARTTEST_IMAGE:-itzg/minecraft-server:java${JAVA_VERSION}}"
 TIMEOUT="${STARTTEST_TIMEOUT:-600}"
 WORK="${STARTTEST_DIR:-$MOD_DIR/.server-starttest}/${LOADER}-${MODE}"
@@ -170,8 +129,8 @@ if [ "$SKIP" -eq 1 ]; then
     exit 0
 fi
 
-# Release jar: <loader>/build/libs of a multiloader project or build/libs of a single loader project, without
-# sources, javadoc and dev jars. If several jars are left, the one with the mod version wins.
+# Release jar in <loader>/build/libs, without sources, javadoc and dev jars. If several jars are left, the one with the
+# mod version wins.
 JARS=()
 shopt -s nullglob
 for jar in "$LIBS"/*.jar; do
@@ -274,22 +233,32 @@ docker run -d --name "$NAME" \
     -v "$WORK/mods:/mods:ro" \
     "$IMAGE" > /dev/null
 
-echo "Waiting up to ${TIMEOUT}s for the server to become healthy..."
+# The server is started as soon as it logs "Done (...)!" (much earlier than the health check of the image reports it).
+# After that the server keeps running a few seconds, so that errors right after the start end up in the log, too.
+DONE_PATTERN='Done \([0-9.]+s\)!'
+GRACE_SECONDS=5
+echo "Waiting up to ${TIMEOUT}s for the server to start..."
 STATUS="starting"
 START=$(date +%s)
 while true; do
     STATE="$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo missing)"
-    STATUS="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$NAME" 2>/dev/null || echo missing)"
-    if [ "$STATUS" = "healthy" ] || [ "$STATE" != "running" ]; then
+    if docker logs "$NAME" 2>&1 | grep -qE "$DONE_PATTERN"; then
+        STATUS="started"
+        sleep "$GRACE_SECONDS"
+        STATE="$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo missing)"
+        break
+    fi
+    if [ "$STATE" != "running" ]; then
+        STATUS="stopped"
         break
     fi
     if [ $(( $(date +%s) - START )) -ge "$TIMEOUT" ]; then
         STATUS="timeout"
         break
     fi
-    sleep 5
+    sleep 1
 done
-echo "Server state: $STATE, health: $STATUS after $(( $(date +%s) - START ))s"
+echo "Server state: $STATE, start: $STATUS after $(( $(date +%s) - START ))s"
 
 # stop gracefully (SIGTERM is forwarded to the server, which saves and shuts down)
 docker stop -t 120 "$NAME" > /dev/null 2>&1 || true
@@ -299,8 +268,11 @@ cp -r "$WORK/data/crash-reports" "$WORK/logs/" 2>/dev/null || true
 ls "$WORK/data/mods" > "$WORK/logs/installed-mods.txt" 2>/dev/null || true
 
 FAILED=0
-if [ "$STATUS" != "healthy" ]; then
-    log "**Server did not become healthy (state: $STATE, health: $STATUS).**"
+if [ "$STATUS" != "started" ]; then
+    log "**Server did not start (state: $STATE, start: $STATUS).**"
+    FAILED=1
+elif [ "$STATE" != "running" ]; then
+    log "**Server stopped within ${GRACE_SECONDS}s after the start (state: $STATE).**"
     FAILED=1
 fi
 
@@ -342,6 +314,13 @@ if [ -s "$PROBLEMS" ]; then
 fi
 if ! grep -qiE "Done \([0-9.]+s\)!" "$SERVER_LOG"; then
     log "**Server log does not contain the \"Done\" message.**"
+    FAILED=1
+fi
+# The mod must be in the mod list of the loader (otherwise a wrong jar, metadata or environment would pass silently):
+# Fabric "	- modid 1.0", NeoForge "Mod Name 1.0 (modid)" / " - modid (jar(...))", Forge "Found valid mod file ... with {modid}"
+LOADED_PATTERN="^[[:space:]]*- ${MOD_ID}( |\$)|\(${MOD_ID}\)|- ${MOD_ID} \(jar|mod file .*\{([^}]*[ ,])?${MOD_ID}([ ,][^}]*)?\}"
+if ! cat "$WORK"/logs/*.log 2>/dev/null | grep -qE "$LOADED_PATTERN"; then
+    log "**The mod $MOD_ID was not loaded** (not found in the mod list of the server log)."
     FAILED=1
 fi
 if [ -d "$WORK/logs/crash-reports" ]; then

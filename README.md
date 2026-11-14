@@ -62,8 +62,8 @@ the required mods only and once with the optional integrations.
 | `timeout-minutes` | `30` | Maximum run time of a job |
 | `actions-ref` | `main` | Branch or tag of this repository to take the script from. **Set it to the same ref as in `uses: …/server-starttest.yml@<ref>` whenever that ref is not `main`** (a tag or a feature branch), otherwise the workflow of one ref runs the script of `main`. GitHub does not tell a reusable workflow its own ref, so this cannot be detected automatically. |
 
-The test itself is `scripts/server-starttest.sh` of this repository, which works for multiloader projects
-(subprojects `fabric`/`forge`/`neoforge`) and single loader projects (jar in the root project). Run it locally in the
+The test itself is `scripts/server-starttest.sh` of this repository. It supports multiloader projects with one
+subproject per loader (`fabric`/`forge`/`neoforge`, like the MultiLoader template). Run it locally in the
 root directory of a mod (needs bash, Docker, curl and jq):
 
 ```bash
@@ -72,8 +72,8 @@ curl -fsSL https://raw.githubusercontent.com/cech12/MinecraftModActions/main/scr
 ```
 
 It takes everything from the mod repository:
-- `gradle.properties`: `minecraft_version`, `mod_id`, the loader version (`fabric_loader_version`/`loader_version`,
-  `forge_version`, `neoforge_version`) and `java_version` (optional, otherwise derived from the Minecraft version).
+- `gradle.properties`: `minecraft_version`, `mod_id`, `java_version` and the loader version (`fabric_loader_version`,
+  `forge_version`, `neoforge_version`).
 - `scripts/server-starttest.deps` (optional): additional mods from Modrinth, one per line:
   `<loader|*> <required|optional> <modrinth slug> <version>`. `<version>` is a `gradle.properties` key, `=<version
   number>` or `latest`. Required mods must exist, optional mods are only installed with `--with-integrations` and are
@@ -81,6 +81,10 @@ It takes everything from the mod repository:
   automatically. A loader without optional mods skips the `--with-integrations` run.
 - `scripts/server-starttest.allowlist` (optional): extended regexes of harmless log lines, in addition to the built-in
   ones (Netty kqueue probing and LAN advertising in containers).
+
+The test fails if the server does not log "Done" within the timeout, stops again within 5 seconds, writes a crash
+report, logs exceptions, mixin errors or errors mentioning the mod id, or if the mod is not in the mod list of the
+loader (wrong jar, metadata or environment).
 
 Example `scripts/server-starttest.deps`:
 

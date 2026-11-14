@@ -306,12 +306,9 @@ def choose(candidates, mode, prefer=None):
 # ---------------------------------------------------------------- dependencies
 
 def modrinth_versions(project, loader, mc_version):
-    """Versions of a Modrinth project for the loader and Minecraft version (oldest first), None if unknown."""
-    versions = fetch_json(f"https://api.modrinth.com/v2/project/{project}/version",
-                          {"loaders": json.dumps([loader]), "game_versions": json.dumps([mc_version])})
-    if versions is None:
-        return None
-    return sorted(versions, key=lambda v: (version_key(v["version_number"]), v["date_published"]))
+    """Versions of a Modrinth project for the loader and Minecraft version (unsorted), None if unknown."""
+    return fetch_json(f"https://api.modrinth.com/v2/project/{project}/version",
+                      {"loaders": json.dumps([loader]), "game_versions": json.dumps([mc_version])})
 
 
 _projects = {}
@@ -361,11 +358,16 @@ def find_build_version(candidates, values):
     return None
 
 
-def comparable_version(version_number, mc_version):
+def mc_prefix(mc_version):
+    return rf"^{re.escape(mc_version)}[-_+](?:(?:fabric|forge|neoforge|neo)[-_])?"
+
+
+def comparable_version(version_number, mc_version, strip_mc_prefix=True):
     """Modrinth version number without common prefixes that are no part of the mod version ("v1.2", "26.3-1.2",
-    "26.3_neo-1.2"), so that it can be compared with the version range of the metadata."""
+    "26.3_neo-1.2"), so that it can be compared with the version range of the metadata. The Minecraft prefix is kept if
+    the range itself uses it (the mod version contains it)."""
     number = re.sub(r"^[vV](?=\d)", "", version_number)
-    return re.sub(rf"^{re.escape(mc_version)}[-_+](?:(?:fabric|forge|neoforge|neo)[-_])?", "", number)
+    return re.sub(mc_prefix(mc_version), "", number) if strip_mc_prefix else number
 
 
 def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, properties, server_only=False):
@@ -384,7 +386,11 @@ def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode,
         if not versions:
             reasons.append(f"{project}: no version for {loader} {mc_version}")
             continue
-        candidates = [v for v in versions if satisfies(comparable_version(v["version_number"], mc_version), alternatives)]
+        strip = not any(re.match(mc_prefix(mc_version), bound) for predicates in alternatives for _, bound in predicates)
+        comparable = {v["id"]: comparable_version(v["version_number"], mc_version, strip) for v in versions}
+        # oldest first, sorted like the range check compares
+        versions = sorted(versions, key=lambda v: (version_key(comparable[v["id"]]), v["date_published"]))
+        candidates = [v for v in versions if satisfies(comparable[v["id"]], alternatives)]
         if not candidates:
             # the Modrinth version numbers are chosen freely by the author and can differ from the mod version
             reasons.append(f"{project}: no Modrinth version number fits the range {range_text(alternatives)} of the "
@@ -421,6 +427,13 @@ def resolve(args, mode):
     mods, skipped, seen_projects = [], [], set()
     for kind, dep_id, alternatives in sorted(dependencies, key=lambda d: (d[0] != "required", d[1])):
         if kind == "optional" and not args.integrations:
+            continue
+        if args.loader == "fabric" and (dep_id in ("fabric", "fabric-api-base") or re.match(r"^fabric-.+-v\d+$", dep_id)):
+            message = (f"the dependency {dep_id} is a module or an old id of Fabric API, which is not supported: "
+                       "declare fabric-api instead")
+            if kind == "required":
+                raise Failure(message)
+            skipped.append((dep_id, message))
             continue
         projects = modrinth_projects(dep_id, mapping)
         if not projects:

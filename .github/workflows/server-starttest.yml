@@ -1,10 +1,10 @@
 # This workflow starts a real dedicated server (Docker image itzg/minecraft-server) with the release jar of each loader
 # and checks that it starts cleanly. It runs scripts/server-starttest.sh of this repository, which can also be run
-# locally (see the script). All versions come from the gradle.properties of the mod, additional mods and harmless log
-# lines from scripts/server-starttest.deps and scripts/server-starttest.allowlist of the mod (both optional).
+# locally (see the script). Harmless log lines can be listed in scripts/server-starttest.allowlist of the mod.
 #
-# Two runs per loader: only the mod with its required dependencies, and additionally with the optional integrations
-# listed in scripts/server-starttest.deps (skipped by the script if the loader has no optional mods).
+# The server runs with the Minecraft version of the mod, the newest loader version and the newest versions of the
+# dependencies, which are read from the metadata of the jar. Two runs per loader: only the mod with its required
+# dependencies, and additionally with its optional dependencies (skipped if the mod has none for the loader).
 #
 # The jars are taken from an artifact of the same workflow run, so the calling job needs "needs: build".
 
@@ -73,6 +73,11 @@ jobs:
           sparse-checkout: scripts
           persist-credentials: false
 
+      - name: Download built jars
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact-name }}
+
       - name: Prepare
         id: prepare
         run: |
@@ -82,12 +87,6 @@ jobs:
           # empty if the script skips this run; a script error fails this step
           key="$(bash "$STARTTEST_SCRIPT" "$LOADER" "${args[@]}" --print-cache-key)"
           echo "cache-key=$key" >> "$GITHUB_OUTPUT"
-
-      - name: Download built jars
-        if: steps.prepare.outputs.cache-key != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.artifact-name }}
 
       - name: Cache server installation
         if: steps.prepare.outputs.cache-key != ''

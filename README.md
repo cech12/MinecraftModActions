@@ -58,27 +58,28 @@ the required mods only and once with the optional integrations.
 |---|---|---|
 | `loaders` | (required) | JSON list of loader subprojects, e.g. `["fabric","forge","neoforge"]` |
 | `artifact-name` | `gradle-build` | Artifact with the built jars (output of `build.yml`). It is downloaded from the same workflow run, so the calling job needs `needs: build`. |
-| `timeout` | `600` | Seconds to wait for a healthy server |
+| `timeout` | `600` | Seconds to wait for the server start |
 | `timeout-minutes` | `30` | Maximum run time of a job |
 | `actions-ref` | `main` | Branch or tag of this repository to take the script from. **Set it to the same ref as in `uses: …/server-starttest.yml@<ref>` whenever that ref is not `main`** (a tag or a feature branch), otherwise the workflow of one ref runs the script of `main`. GitHub does not tell a reusable workflow its own ref, so this cannot be detected automatically. |
 
 The test itself is `scripts/server-starttest.sh` of this repository. It supports multiloader projects with one
 subproject per loader (`fabric`/`forge`/`neoforge`, like the MultiLoader template). Run it locally in the
-root directory of a mod (needs bash, Docker, curl and jq):
+root directory of a mod (needs bash, Docker, curl, jq and unzip):
 
 ```bash
 ./gradlew build
 curl -fsSL https://raw.githubusercontent.com/cech12/MinecraftModActions/main/scripts/server-starttest.sh | bash -s -- fabric --with-integrations
 ```
 
-It takes everything from the mod repository:
-- `gradle.properties`: `minecraft_version`, `mod_id`, `java_version` and the loader version (`fabric_loader_version`,
-  `forge_version`, `neoforge_version`).
-- `scripts/server-starttest.deps` (optional): additional mods from Modrinth, one per line:
-  `<loader|*> <required|optional> <modrinth slug> <version>`. `<version>` is a `gradle.properties` key, `=<version
-  number>` or `latest`. Required mods must exist, optional mods are only installed with `--with-integrations` and are
-  skipped if they are not available for the Minecraft version yet. Their required dependencies are installed
-  automatically. A loader without optional mods skips the `--with-integrations` run.
+The server runs with the Minecraft version of the mod, but with the **newest loader version** and the **newest
+versions of all dependencies**, so that the test notices when a new loader or dependency release breaks the mod. It
+takes everything from the mod repository and its built jar:
+- `gradle.properties`: `minecraft_version`, `mod_id` and `java_version`.
+- Dependencies: read from the metadata in the jar. On Fabric `depends` are required and `recommends`/`suggests` are
+  optional, on Forge/NeoForge the `[[dependencies]]` of `mods.toml`/`neoforge.mods.toml` (client only dependencies are
+  ignored). Required dependencies are always installed and must exist for the Minecraft version. Optional dependencies
+  are only installed in the integrations run and are skipped if they are not available yet. Their own required
+  dependencies are installed automatically. A loader without optional dependencies skips the integrations run.
 - `scripts/server-starttest.allowlist` (optional): extended regexes of harmless log lines, in addition to the built-in
   ones (Netty kqueue probing and LAN advertising in containers).
 
@@ -86,16 +87,11 @@ The test fails if the server does not log "Done" within the timeout, stops again
 report, logs exceptions, mixin errors or errors mentioning the mod id, or if the mod is not in the mod list of the
 loader (wrong jar, metadata or environment).
 
-Example `scripts/server-starttest.deps`:
+Mod ids are used as Modrinth project names. Mod ids with another project name are mapped centrally for all mods in
+[`scripts/server-starttest-mods.txt`](scripts/server-starttest-mods.txt) (e.g. `roughlyenoughitems` → `rei`). If a
+required dependency is not found, the summary of the test says so; add the mod id there.
 
-```
-fabric  required  fabric-api    fabric_version
-fabric  required  cloth-config  cloth_config_version
-*       required  bucketlib     bucketlib_version
-fabric  optional  modmenu       mod_menu_version
-*       optional  jei           jei_version
-neoforge optional jade          latest
-```
+To reproduce a failure with an older loader, set `STARTTEST_LOADER_VERSION`.
 
 ```yaml
 server-starttest:

@@ -7,29 +7,36 @@
 #   curl -fsSL https://raw.githubusercontent.com/cech12/MinecraftModActions/main/scripts/server-starttest.sh \
 #       | bash -s -- <fabric|forge|neoforge> [--with-integrations]
 #
+# The test runs with the Minecraft version of the mod, but with the NEWEST loader version and the NEWEST versions of
+# all dependencies, so that it notices when a new loader or dependency release breaks the mod.
+#
 # Options:
-#   --with-integrations  also install the optional mods of scripts/server-starttest.deps. If the loader has no optional
-#                        mods, this run would equal the run without the option: the script prints a note and exits 0.
+#   --with-integrations  also install the optional dependencies of the mod. If the mod has none for this loader, this
+#                        run would equal the run without the option: the script prints a note and exits 0.
 #   --print-cache-key    only print the cache key of the server installation in $STARTTEST_DIR/<loader>-<mode>/data
 #                        (empty if the run is skipped, see above) and exit. Used by the CI.
 #
 # For multiloader projects with one subproject per loader (fabric/forge/neoforge), like the MultiLoader template.
-# Requirements: bash, docker, curl, jq.
+# Requirements: bash, docker, curl, jq, unzip.
 #
-# Everything comes from the mod repository:
-#   gradle.properties                    minecraft_version, mod_id, java_version and the loader version
-#                                        (fabric_loader_version, forge_version or neoforge_version)
-#   scripts/server-starttest.deps        (optional) additional mods from Modrinth, one per line:
-#                                        <loader|*> <required|optional> <modrinth slug> <version>
-#                                        <version>: a gradle.properties key, "=<version number>" or "latest"
+# Everything comes from the mod repository and its built jar:
+#   gradle.properties                    minecraft_version, mod_id, java_version
+#   dependencies                         read from the metadata in the jar: fabric.mod.json (depends = required,
+#                                        recommends/suggests = optional) or neoforge.mods.toml/mods.toml (required or
+#                                        optional, client only dependencies are ignored). They are installed from
+#                                        Modrinth; mod ids with another Modrinth project name are mapped in
+#                                        server-starttest-mods.txt next to this script (one central list for all mods).
 #                                        Required dependencies of these mods are installed automatically.
 #   scripts/server-starttest.allowlist   (optional) regexes of harmless log lines, in addition to the built-in ones
 #
 # Environment variables (optional):
-#   STARTTEST_TIMEOUT   seconds to wait for a healthy server (default 600)
-#   STARTTEST_DIR       working directory for server data and logs (default <mod repository>/.server-starttest)
-#   STARTTEST_IMAGE     docker image (default itzg/minecraft-server:java<java version>)
-#   STARTTEST_MOD_DIR   root directory of the mod repository (default: current directory)
+#   STARTTEST_TIMEOUT          seconds to wait for the server start (default 600)
+#   STARTTEST_DIR              working directory for server data and logs (default <mod repository>/.server-starttest)
+#   STARTTEST_IMAGE            docker image (default itzg/minecraft-server:java<java version>)
+#   STARTTEST_MOD_DIR          root directory of the mod repository (default: current directory)
+#   STARTTEST_LOADER_VERSION   loader version to use instead of the newest one (e.g. to reproduce a failure)
+#   STARTTEST_ACTIONS_REF      branch or tag of cech12/MinecraftModActions to download the mod id mapping from when it
+#                              is not next to the script (default main)
 set -euo pipefail
 
 usage() { echo "Usage: $0 <fabric|forge|neoforge> [--with-integrations] [--print-cache-key]" >&2; exit 2; }
@@ -45,12 +52,13 @@ for arg in "$@"; do
     esac
 done
 case "$LOADER" in
-    fabric)   LOADER_TYPE=FABRIC;   LOADER_VERSION_KEY=fabric_loader_version; LOADER_VERSION_ENV=FABRIC_LOADER_VERSION ;;
-    forge)    LOADER_TYPE=FORGE;    LOADER_VERSION_KEY=forge_version;         LOADER_VERSION_ENV=FORGE_VERSION ;;
-    neoforge) LOADER_TYPE=NEOFORGE; LOADER_VERSION_KEY=neoforge_version;      LOADER_VERSION_ENV=NEOFORGE_VERSION ;;
+    fabric)   LOADER_TYPE=FABRIC;   LOADER_VERSION_ENV=FABRIC_LOADER_VERSION; BUILD_VERSION_KEY=fabric_loader_version ;;
+    forge)    LOADER_TYPE=FORGE;    LOADER_VERSION_ENV=FORGE_VERSION;         BUILD_VERSION_KEY=forge_version ;;
+    neoforge) LOADER_TYPE=NEOFORGE; LOADER_VERSION_ENV=NEOFORGE_VERSION;      BUILD_VERSION_KEY=neoforge_version ;;
     *) usage ;;
 esac
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)"
 MOD_DIR="$(cd "${STARTTEST_MOD_DIR:-$PWD}" && pwd)"
 cd "$MOD_DIR"
 if [ ! -f gradle.properties ]; then
@@ -62,8 +70,6 @@ if [ ! -f "$LOADER/build.gradle" ] && [ ! -f "$LOADER/build.gradle.kts" ]; then
     exit 2
 fi
 LIBS="$LOADER/build/libs"
-
-DEPS_FILE="scripts/server-starttest.deps"
 ALLOWLIST_FILE="scripts/server-starttest.allowlist"
 
 # value of a gradle.properties key (empty if it does not exist)
@@ -80,54 +86,17 @@ prop() {
     printf '%s' "$value"
 }
 
+# web request; a failed request is an error (exit code of curl)
+api() { curl -fsS --max-time 30 --retry 3 --retry-all-errors -A "server-starttest (github.com/cech12/MinecraftModActions)" "$@"; }
+
 MC_VERSION="$(prop minecraft_version)"
 MOD_ID="$(prop mod_id)"
-LOADER_VERSION="$(prop "$LOADER_VERSION_KEY")"
 JAVA_VERSION="$(prop java_version)"
+BUILD_LOADER_VERSION="$(prop_or_empty "$BUILD_VERSION_KEY")"
 IMAGE="${STARTTEST_IMAGE:-itzg/minecraft-server:java${JAVA_VERSION}}"
 TIMEOUT="${STARTTEST_TIMEOUT:-600}"
 WORK="${STARTTEST_DIR:-$MOD_DIR/.server-starttest}/${LOADER}-${MODE}"
 NAME="${MOD_ID}-starttest-${LOADER}-${MODE}"
-LOADER_ENV=(-e "TYPE=$LOADER_TYPE" -e "$LOADER_VERSION_ENV=$LOADER_VERSION")
-
-# lines of the deps file for this loader: "<kind> <slug> <version>"
-deps_for_loader() {
-    [ -f "$DEPS_FILE" ] || return 0
-    while read -r dep_loader dep_kind dep_slug dep_version _; do
-        [ -z "${dep_loader:-}" ] && continue
-        case "$dep_loader" in \#*) continue ;; esac
-        if [ "$dep_loader" != "$LOADER" ] && [ "$dep_loader" != "*" ]; then continue; fi
-        case "$dep_kind" in
-            required|optional) ;;
-            *) echo "Invalid kind '$dep_kind' in $DEPS_FILE (required or optional)" >&2; exit 2 ;;
-        esac
-        if [ -z "${dep_slug:-}" ] || [ -z "${dep_version:-}" ]; then
-            echo "Invalid line in $DEPS_FILE: $dep_loader $dep_kind ${dep_slug:-} ${dep_version:-}" >&2
-            exit 2
-        fi
-        echo "$dep_kind $dep_slug $dep_version"
-    done < "$DEPS_FILE"
-}
-
-# (not in a pipe or process substitution, so that an invalid deps file stops the script)
-DEPS="$(deps_for_loader)"
-
-# The integrations run only makes sense if the loader has optional mods, otherwise it equals the required run.
-SKIP=0
-if [ "$MODE" = "integrations" ] && ! grep -q "^optional " <<< "$DEPS"; then
-    SKIP=1
-fi
-
-if [ "$PRINT_CACHE_KEY" -eq 1 ]; then
-    [ "$SKIP" -eq 0 ] && echo "server-starttest-${LOADER}-${MODE}-${MC_VERSION}-${LOADER_VERSION}-java${JAVA_VERSION}"
-    exit 0
-fi
-if [ "$SKIP" -eq 1 ]; then
-    mkdir -p "$WORK"
-    printf '### Server start test: %s (%s)\n\nSkipped: no optional mods for %s in %s, this run would equal the run without integrations.\n' \
-        "$LOADER" "$MODE" "$LOADER" "$DEPS_FILE" | tee "$WORK/summary.md"
-    exit 0
-fi
 
 # Release jar in <loader>/build/libs, without sources, javadoc and dev jars. If several jars are left, the one with the
 # mod version wins.
@@ -154,6 +123,118 @@ if [ "${#JARS[@]}" -ne 1 ]; then
 fi
 JAR="${JARS[0]}"
 
+# Newest loader version for the Minecraft version
+newest_loader_version() {
+    local prefix rest
+    case "$LOADER" in
+        fabric)
+            api "https://meta.fabricmc.net/v2/versions/loader/$MC_VERSION" | jq -r '.[0].loader.version // empty' ;;
+        forge)
+            api "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json" \
+                | jq -r --arg key "$MC_VERSION-latest" '.promos[$key] // empty' ;;
+        neoforge)
+            # NeoForge versions start with the Minecraft version without "1." (1.21.1 -> 21.1.x, 1.21 -> 21.0.x, 26.3 -> 26.3.x)
+            if [[ "$MC_VERSION" == 1.* ]]; then
+                rest="${MC_VERSION#1.}"
+                if [[ "$rest" == *.* ]]; then prefix="$rest."; else prefix="$rest.0."; fi
+            else
+                prefix="$MC_VERSION."
+            fi
+            api "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge" \
+                | jq -r --arg prefix "$prefix" '.versions[] | select(startswith($prefix))' | sort -V | tail -n 1 ;;
+    esac
+}
+if [ -n "${STARTTEST_LOADER_VERSION:-}" ]; then
+    LOADER_VERSION="$STARTTEST_LOADER_VERSION"
+else
+    if ! LOADER_VERSION="$(newest_loader_version)"; then
+        echo "The newest $LOADER version for Minecraft $MC_VERSION could not be determined (network or API error, see above)." >&2
+        exit 1
+    fi
+    if [ -z "$LOADER_VERSION" ]; then
+        echo "There is no $LOADER version for Minecraft $MC_VERSION yet." >&2
+        exit 1
+    fi
+fi
+LOADER_ENV=(-e "TYPE=$LOADER_TYPE" -e "$LOADER_VERSION_ENV=$LOADER_VERSION")
+
+# Central mapping of mod ids to Modrinth projects (next to this script, otherwise downloaded)
+if [ -f "$SCRIPT_DIR/server-starttest-mods.txt" ]; then
+    MAPPING="$(cat "$SCRIPT_DIR/server-starttest-mods.txt")"
+elif ! MAPPING="$(api "https://raw.githubusercontent.com/cech12/MinecraftModActions/${STARTTEST_ACTIONS_REF:-main}/scripts/server-starttest-mods.txt")"; then
+    echo "The mod id mapping server-starttest-mods.txt could not be downloaded." >&2
+    exit 1
+fi
+MAPPING="$(tr -d '\r' <<< "$MAPPING" | grep -vE '^[[:space:]]*(#|$)' || true)"
+
+# Dependencies from the metadata of the jar: "<required|optional> <mod id>"
+metadata_dependencies() {
+    case "$LOADER" in
+        fabric)
+            unzip -p "$JAR" fabric.mod.json | jq -r '
+                ((.depends // {}) | keys[] | "required " + .),
+                (((.recommends // {}) + (.suggests // {})) | keys[] | "optional " + .)' ;;
+        forge|neoforge)
+            local file=META-INF/mods.toml
+            if [ "$LOADER" = "neoforge" ] && unzip -l "$JAR" META-INF/neoforge.mods.toml > /dev/null 2>&1; then
+                file=META-INF/neoforge.mods.toml
+            fi
+            # [[dependencies.<mod>]] blocks: modId, type (NeoForge, newer Forge) or mandatory (Forge), side
+            unzip -p "$JAR" "$file" | tr -d '\r' | awk '
+                function value(line) { sub(/#.*/, "", line); sub(/^[^=]*=/, "", line); gsub(/["\047 \t]/, "", line); return line }
+                function flush() {
+                    if (dep && id != "") {
+                        k = tolower(kind)
+                        if (k == "" || k == "true") k = "required"
+                        if (k == "false") k = "optional"
+                        if ((k == "required" || k == "optional") && toupper(side) != "CLIENT") print k, id
+                    }
+                    id = ""; kind = ""; side = ""
+                }
+                /^[ \t]*\[/ { flush(); dep = ($0 ~ /^[ \t]*\[\[dependencies\./); next }
+                dep && /^[ \t]*modId[ \t]*=/ { id = value($0) }
+                dep && /^[ \t]*(type|mandatory)[ \t]*=/ { kind = value($0) }
+                dep && /^[ \t]*side[ \t]*=/ { side = value($0) }
+                END { flush() }' ;;
+    esac
+}
+# Mods to install: "<required|optional> <mod id> <modrinth projects...>" without the loader, Minecraft and the mod
+# itself, and without mod ids that the mapping ignores ("-"). A mod that is required and optional counts as required.
+dependencies() {
+    local kind id slugs
+    # (reverse order: "required" lines before "optional" lines, so that the required kind wins below)
+    metadata_dependencies | sort -r -u | while read -r kind id; do
+        case "$id" in
+            minecraft|java|fabricloader|fabric-loader|forge|neoforge|"$MOD_ID"|'${'*) continue ;;
+        esac
+        slugs="$(awk -v id="$id" '$1 == id { $1 = ""; sub(/^ /, ""); print; exit }' <<< "$MAPPING")"
+        [ "$slugs" = "-" ] && continue
+        echo "$kind $id ${slugs:-$id}"
+    done | awk '!seen[$2]++'
+}
+# (not in a pipe or process substitution, so that a broken jar stops the script)
+if ! DEPS="$(dependencies)"; then
+    echo "The dependencies could not be read from the metadata of $JAR." >&2
+    exit 2
+fi
+
+# The integrations run only makes sense if the mod has optional dependencies, otherwise it equals the required run.
+SKIP=0
+if [ "$MODE" = "integrations" ] && ! grep -q "^optional " <<< "$DEPS"; then
+    SKIP=1
+fi
+
+if [ "$PRINT_CACHE_KEY" -eq 1 ]; then
+    [ "$SKIP" -eq 0 ] && echo "server-starttest-${LOADER}-${MODE}-${MC_VERSION}-${LOADER_VERSION}-java${JAVA_VERSION}"
+    exit 0
+fi
+if [ "$SKIP" -eq 1 ]; then
+    mkdir -p "$WORK"
+    printf '### Server start test: %s (%s)\n\nSkipped: the mod has no optional dependencies for %s, this run would equal the run without integrations.\n' \
+        "$LOADER" "$MODE" "$LOADER" | tee "$WORK/summary.md"
+    exit 0
+fi
+
 SUMMARY="$WORK/summary.md"
 mkdir -p "$WORK/data" "$WORK/mods" "$WORK/logs"
 # keep the cached server installation (libraries, server jar), but start every run with a clean mod list and world
@@ -166,52 +247,49 @@ log() { echo "$*"; echo "$*" >> "$SUMMARY"; }
 
 log "### Server start test: $LOADER ($MODE)"
 log ""
-log "- Minecraft $MC_VERSION, $LOADER_TYPE $LOADER_VERSION, image \`$IMAGE\`"
+if [ -n "$BUILD_LOADER_VERSION" ] && [ "$BUILD_LOADER_VERSION" != "$LOADER_VERSION" ]; then
+    log "- Minecraft $MC_VERSION, $LOADER_TYPE $LOADER_VERSION (newest, built with $BUILD_LOADER_VERSION), image \`$IMAGE\`"
+else
+    log "- Minecraft $MC_VERSION, $LOADER_TYPE $LOADER_VERSION, image \`$IMAGE\`"
+fi
 log "- Mod: \`$(basename "$JAR")\`"
 
-# Resolve the additional mods to Modrinth version ids.
+# Newest version of each dependency on Modrinth: the newest release, otherwise the newest version. If the mapping lists
+# several Modrinth projects for a mod id, the first one with a version for this loader and Minecraft version is used.
 MODRINTH_IDS=()
 SKIPPED=()
-while read -r dep_kind dep_slug dep_version; do
+while read -r dep_kind dep_id dep_slugs; do
     [ -z "${dep_kind:-}" ] && continue
     [ "$dep_kind" = "optional" ] && [ "$MODE" != "integrations" ] && continue
-    case "$dep_version" in
-        latest) version="latest" ;;
-        =*) version="${dep_version#=}" ;;
-        *) version="$(prop "$dep_version")" ;;
-    esac
-    # a failed request is an error, only an empty result means "not available"
-    if ! versions="$(curl -fsS --max-time 30 --retry 3 --retry-all-errors \
-        -A "server-starttest (github.com/cech12/MinecraftModActions)" -G \
-        "https://api.modrinth.com/v2/project/${dep_slug}/version" \
-        --data-urlencode "loaders=[\"${LOADER}\"]" \
-        --data-urlencode "game_versions=[\"${MC_VERSION}\"]")"; then
-        log "- **Modrinth request for $dep_slug failed** (network or API error, see above)"
-        exit 1
-    fi
-    if [ "$version" = "latest" ]; then
-        # newest release, otherwise the newest version (the API returns the newest first)
-        version_id="$(jq -r '((map(select(.version_type == "release")) + .)[0]) | .id // empty' <<< "$versions")"
-        version="$(jq -r --arg id "$version_id" 'map(select(.id == $id))[0].version_number // "latest"' <<< "$versions")"
-    else
-        # exact version number first, then with build metadata (e.g. 26.3.158+fabric), then with a "-" suffix
-        # (e.g. 20.0.149-fabric) only if it is a release, so that a pre-release like 1.2-beta is never picked for 1.2
-        version_id="$(jq -r --arg v "$version" \
-            '(map(select(.version_number == $v))
-              + map(select(.version_number | startswith($v + "+")))
-              + map(select((.version_number | startswith($v + "-")) and .version_type == "release")))[0].id // empty' <<< "$versions")"
-    fi
-    if [ -n "$version_id" ]; then
-        MODRINTH_IDS+=("${dep_slug}:${version_id}")
-        log "- $dep_kind: $dep_slug $version"
-    elif [ "$dep_kind" = "required" ]; then
-        log "- **required mod $dep_slug $version is not available on Modrinth for $LOADER $MC_VERSION**"
-        exit 1
-    else
-        SKIPPED+=("$dep_slug $version")
-        log "- skipped (not available for $LOADER $MC_VERSION): $dep_slug $version"
+    found=""
+    for slug in $dep_slugs; do
+        if ! versions="$(api -G "https://api.modrinth.com/v2/project/${slug}/version" \
+            --data-urlencode "loaders=[\"${LOADER}\"]" \
+            --data-urlencode "game_versions=[\"${MC_VERSION}\"]" 2> "$WORK/curl-error.txt")"; then
+            # an unknown project is "not available", every other error stops the test
+            if grep -q "404" "$WORK/curl-error.txt"; then continue; fi
+            cat "$WORK/curl-error.txt" >&2
+            log "- **Modrinth request for $slug failed** (network or API error, see above)"
+            exit 1
+        fi
+        version="$(jq -r '((map(select(.version_type == "release")) + .)[0]) | (.id // empty) + " " + (.version_number // empty)' <<< "$versions")"
+        if [ -n "${version// /}" ]; then
+            found="$slug"
+            MODRINTH_IDS+=("${slug}:${version%% *}")
+            log "- $dep_kind: $slug ${version#* }$([ "$slug" != "$dep_id" ] && echo " (mod id $dep_id)")"
+            break
+        fi
+    done
+    if [ -z "$found" ]; then
+        if [ "$dep_kind" = "required" ]; then
+            log "- **required dependency $dep_id is not available on Modrinth for $LOADER $MC_VERSION** (Modrinth projects: $dep_slugs). If the mod has another name on Modrinth, add it to server-starttest-mods.txt of cech12/MinecraftModActions."
+            exit 1
+        fi
+        SKIPPED+=("$dep_id")
+        log "- skipped (not available for $LOADER $MC_VERSION): $dep_id (Modrinth projects: $dep_slugs)"
     fi
 done <<< "$DEPS"
+rm -f "$WORK/curl-error.txt"
 log ""
 
 MODRINTH_PROJECTS="$(IFS=,; echo "${MODRINTH_IDS[*]:-}")"

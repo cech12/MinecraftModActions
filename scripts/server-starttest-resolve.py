@@ -13,7 +13,7 @@ Version sets (--versions):
 Output (tab separated lines on stdout):
   LOADER_VERSION   <version>  <range of the metadata or "*">
   BUILD_LOADER_VERSION  <version of gradle.properties or "">
-  OPTIONAL_COUNT   <number of optional dependencies of the mod>
+  OPTIONAL_COUNT   <number of installed optional dependencies (with --integrations), client only mods excluded>
   SAME_AS_BUILD    (only with --versions minimum, if the result equals the build versions)
   MOD              <required|optional> <mod id> <modrinth project> <version id> <version number> <range>
   SKIPPED          <mod id> <reason>   (optional dependencies that are not available)
@@ -317,6 +317,16 @@ def modrinth_versions(project, loader, mc_version):
     return sorted(versions, key=lambda v: (version_key(v["version_number"]), v["date_published"]))
 
 
+_projects = {}
+
+
+def modrinth_project(project):
+    """Project data of Modrinth (cached), None if unknown."""
+    if project not in _projects:
+        _projects[project] = fetch_json(f"https://api.modrinth.com/v2/project/{project}")
+    return _projects[project]
+
+
 def build_version_values(properties):
     return [value for key, value in properties.items() if key.endswith("_version") and value]
 
@@ -326,10 +336,15 @@ def matches_build_value(version_number, values):
                for v in values)
 
 
-def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, build_values):
-    """Returns (project, version) or (None, reason)."""
+def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, build_values, server_only=False):
+    """Returns (project, version) or (None, reason). With server_only, client only projects are not used."""
     reasons = []
     for project in projects:
+        if server_only:
+            data = modrinth_project(project)
+            if data is not None and data.get("server_side") == "unsupported":
+                reasons.append(f"{project}: client only mod, not loaded on a server")
+                continue
         versions = modrinth_versions(project, loader, mc_version)
         if versions is None:
             reasons.append(f"{project}: no Modrinth project")
@@ -366,15 +381,15 @@ def resolve(args, mode):
     mapping = read_mapping(args.mapping)
     build_values = build_version_values(args.properties)
     mods, skipped, seen_projects = [], [], set()
-    optional_count = sum(1 for kind, _, _ in dependencies if kind == "optional")
     for kind, dep_id, alternatives in sorted(dependencies, key=lambda d: (d[0] != "required", d[1])):
         if kind == "optional" and not args.integrations:
             continue
         projects = modrinth_projects(dep_id, mapping)
         if not projects:
             continue
+        # optional client only mods (e.g. Mod Menu) are not loaded on a server, so they are not installed
         project, version = resolve_dependency(dep_id, alternatives, projects, args.loader, args.mc_version, mode,
-                                              build_values)
+                                              build_values, server_only=kind == "optional")
         if project is None:
             if kind == "required":
                 raise Failure(f"required dependency {dep_id} ({range_text(alternatives)}) is not available: {version}. "
@@ -386,6 +401,8 @@ def resolve(args, mode):
             continue
         seen_projects.add(project)
         mods.append((kind, dep_id, project, version["id"], version["version_number"], range_text(alternatives)))
+    # optional dependencies that are installed (only counted with --integrations)
+    optional_count = sum(1 for mod in mods if mod[0] == "optional")
     return loader_version, range_text(loader_range), optional_count, mods, skipped
 
 

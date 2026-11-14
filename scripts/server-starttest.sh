@@ -176,7 +176,9 @@ if [ -z "$RESOLVE_FAILURE" ]; then
     # The integrations run only makes sense with optional dependencies, the minimum run only with other versions than
     # the build run: otherwise they would equal another run.
     if [ "$MODE" = "integrations" ] && [ "$(field OPTIONAL_COUNT 2)" = "0" ]; then
-        SKIP="the mod has no optional dependencies for $LOADER, this run would equal the run without integrations."
+        SKIP="the mod has no optional dependencies for $LOADER that run on a server, this run would equal the run without integrations."
+        SKIPPED_OPTIONAL="$(awk -F'	' '$1 == "SKIPPED" { printf "%s%s (%s)", sep, $2, $3; sep = ", " }' <<< "$RESOLVED")"
+        [ -n "$SKIPPED_OPTIONAL" ] && SKIP="$SKIP Not installed: $SKIPPED_OPTIONAL"
     elif grep -q "^SAME_AS_BUILD" <<< "$RESOLVED"; then
         SKIP="the minimum versions are the build versions, this run would equal the build run."
     fi

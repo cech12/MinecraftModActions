@@ -242,7 +242,8 @@ STATUS="starting"
 START=$(date +%s)
 while true; do
     STATE="$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo missing)"
-    if docker logs "$NAME" 2>&1 | grep -qE "$DONE_PATTERN"; then
+    # (no grep -q: its early exit would fail the pipe with SIGPIPE under pipefail)
+    if docker logs "$NAME" 2>&1 | grep -E "$DONE_PATTERN" > /dev/null; then
         STATUS="started"
         sleep "$GRACE_SECONDS"
         STATE="$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo missing)"
@@ -319,7 +320,7 @@ fi
 # The mod must be in the mod list of the loader (otherwise a wrong jar, metadata or environment would pass silently):
 # Fabric "	- modid 1.0", NeoForge "Mod Name 1.0 (modid)" / " - modid (jar(...))", Forge "Found valid mod file ... with {modid}"
 LOADED_PATTERN="^[[:space:]]*- ${MOD_ID}( |\$)|\(${MOD_ID}\)|- ${MOD_ID} \(jar|mod file .*\{([^}]*[ ,])?${MOD_ID}([ ,][^}]*)?\}"
-if ! cat "$WORK"/logs/*.log 2>/dev/null | grep -qE "$LOADED_PATTERN"; then
+if ! grep -qsE "$LOADED_PATTERN" "$WORK"/logs/*.log; then
     log "**The mod $MOD_ID was not loaded** (not found in the mod list of the server log)."
     FAILED=1
 fi

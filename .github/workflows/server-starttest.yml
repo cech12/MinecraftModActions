@@ -2,9 +2,12 @@
 # and checks that it starts cleanly. It runs scripts/server-starttest.sh of this repository, which can also be run
 # locally (see the script). Harmless log lines can be listed in scripts/server-starttest.allowlist of the mod.
 #
-# The server runs with the Minecraft version of the mod, the newest loader version and the newest versions of the
-# dependencies, which are read from the metadata of the jar. Two runs per loader: only the mod with its required
-# dependencies, and additionally with its optional dependencies (skipped if the mod has none for the loader).
+# The server runs with the Minecraft version of the mod. The dependencies are read from the metadata of the jar. Per
+# loader and version set ("versions" input) there are two runs: only the mod with its required dependencies, and
+# additionally with its optional dependencies (skipped if the mod has none for the loader).
+#   build    loader and dependency versions the mod is built with (gradle.properties)
+#   minimum  oldest versions the mod allows (skipped if they equal the build versions)
+#   newest   newest versions within the ranges of the mod; for a scheduled run, not as a requirement for a release
 #
 # The jars are taken from an artifact of the same workflow run, so the calling job needs "needs: build".
 
@@ -22,8 +25,13 @@ on:
         required: false
         type: string
         default: gradle-build
+      versions:
+        description: 'JSON list of version sets: build, minimum, newest. Default: build and minimum (use newest in a scheduled workflow).'
+        required: false
+        type: string
+        default: '["build", "minimum"]'
       timeout:
-        description: 'Seconds to wait for a healthy server'
+        description: 'Seconds to wait for the server start'
         required: false
         type: number
         default: 600
@@ -39,13 +47,13 @@ on:
         default: main
 
 env:
-  # contract with scripts/server-starttest.sh: server data in $STARTTEST_DIR/<loader>-<mode>/data
+  # contract with scripts/server-starttest.sh: server data in $STARTTEST_DIR/<loader>-<versions>-<mode>/data
   STARTTEST_DIR: ${{ github.workspace }}/.server-starttest
   STARTTEST_SCRIPT: ${{ github.workspace }}/.minecraft-mod-actions/scripts/server-starttest.sh
 
 jobs:
   server-starttest:
-    name: Server Start ${{ matrix.loader }} (${{ matrix.mode }})
+    name: Server Start ${{ matrix.loader }} (${{ matrix.versions }}, ${{ matrix.mode }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -55,10 +63,13 @@ jobs:
       fail-fast: false
       matrix:
         loader: ${{ fromJSON(inputs.loaders) }}
+        versions: ${{ fromJSON(inputs.versions) }}
         mode: [ required, integrations ]
     env:
       LOADER: ${{ matrix.loader }}
+      VERSIONS: ${{ matrix.versions }}
       MODE: ${{ matrix.mode }}
+      RUN_DIR: ${{ matrix.loader }}-${{ matrix.versions }}-${{ matrix.mode }}
 
     steps:
       - name: Checkout repository
@@ -81,7 +92,7 @@ jobs:
       - name: Prepare
         id: prepare
         run: |
-          args=()
+          args=(--versions "$VERSIONS")
           if [ "$MODE" = "integrations" ]; then args+=(--with-integrations); fi
           echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
           # empty if the script skips this run; a script error fails this step
@@ -92,7 +103,7 @@ jobs:
         if: steps.prepare.outputs.cache-key != ''
         uses: actions/cache@v6
         with:
-          path: ${{ env.STARTTEST_DIR }}/${{ matrix.loader }}-${{ matrix.mode }}/data
+          path: ${{ env.STARTTEST_DIR }}/${{ env.RUN_DIR }}/data
           key: ${{ steps.prepare.outputs.cache-key }}
 
       - name: Run server start test
@@ -101,15 +112,15 @@ jobs:
           ARGS: ${{ steps.prepare.outputs.args }}
         run: |
           status=0
-          # ARGS is intentionally unquoted (empty or --with-integrations)
+          # ARGS is intentionally unquoted (--versions <set> [--with-integrations])
           bash "$STARTTEST_SCRIPT" "$LOADER" $ARGS || status=$?
-          cat "$STARTTEST_DIR/$LOADER-$MODE/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+          cat "$STARTTEST_DIR/$RUN_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
           exit $status
 
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: server-starttest-${{ matrix.loader }}-${{ matrix.mode }}
+          name: server-starttest-${{ env.RUN_DIR }}
           if-no-files-found: ignore
-          path: ${{ env.STARTTEST_DIR }}/${{ matrix.loader }}-${{ matrix.mode }}/logs/
+          path: ${{ env.STARTTEST_DIR }}/${{ env.RUN_DIR }}/logs/

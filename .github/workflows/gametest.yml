@@ -69,7 +69,8 @@ jobs:
             [ -f "$report" ] || continue
             if [ "$report" = build/gametest-report.xml ]; then loader="(root project)"; else loader="${report%%/*}"; fi
             tests=$(grep -o '<testcase ' "$report" | wc -l)
-            failures=$(grep -o '<failure' "$report" | wc -l)
+            # JUnit reports write failed assertions as <failure> and unexpected exceptions as <error>
+            failures=$(grep -oE '<(failure|error)[ >/]' "$report" | wc -l)
             echo "### Game tests $loader: $tests tests, $failures failures" >> "$GITHUB_STEP_SUMMARY"
           done
 

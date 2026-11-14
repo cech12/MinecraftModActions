@@ -1,4 +1,5 @@
-# This workflow builds a Minecraft Forge mod project
+# This workflow builds a Minecraft mod project and optionally runs its game tests in the same job, so that the game
+# tests reuse the Minecraft setup and compiled classes of the build instead of preparing everything again.
 
 name: "Build"
 
@@ -9,6 +10,11 @@ on:
         description: 'Java version that should be used to compile the code [8, 16, 17]'
         required: true
         type: number
+      gametest:
+        description: 'Also run the game tests ("runGameTestServer" of all projects) after the build. A failing game test fails the job.'
+        required: false
+        type: boolean
+        default: false
     outputs:
       artifact-name:
         description: 'Name of uploaded artifact'
@@ -16,7 +22,8 @@ on:
 
 jobs:
   build:
-    name: Build
+    # the name stays "Build" without game tests, so required status checks of other mods keep matching
+    name: ${{ inputs.gametest && 'Build & Game Test' || 'Build' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -75,3 +82,34 @@ jobs:
             forge/build/libs
             neoforge/build/libs
             fabric/build/libs
+
+      - name: Run game tests
+        if: inputs.gametest
+        run: ./gradlew runGameTestServer --no-daemon --parallel --continue
+
+      - name: Write game test summary
+        if: always() && inputs.gametest
+        run: |
+          shopt -s nullglob
+          for report in build/gametest-report.xml */build/gametest-report.xml; do
+            [ -f "$report" ] || continue
+            if [ "$report" = build/gametest-report.xml ]; then loader="(root project)"; else loader="${report%%/*}"; fi
+            tests=$(grep -o '<testcase ' "$report" | wc -l)
+            # JUnit reports write failed assertions as <failure> and unexpected exceptions as <error>
+            failures=$(grep -oE '<(failure|error)[ >/]' "$report" | wc -l)
+            echo "### Game tests $loader: $tests tests, $failures failures" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload game test reports and logs
+        if: always() && inputs.gametest
+        uses: actions/upload-artifact@v7
+        with:
+          name: gametest
+          if-no-files-found: ignore
+          path: |
+            build/gametest-report.xml
+            runs/gametest/logs/
+            runs/gametest/crash-reports/
+            */build/gametest-report.xml
+            */runs/gametest/logs/
+            */runs/gametest/crash-reports/

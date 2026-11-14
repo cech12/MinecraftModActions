@@ -20,6 +20,10 @@ build:
     gametest: true
 ```
 
+The game test servers of all loaders run at the same time (`--parallel`), each with the default heap of a quarter of
+the runner memory. If a large mod runs out of memory, set `-Xmx` in the game test run configuration of the mod.
+With `gametest: true` the job is named "Build & Game Test", otherwise it stays "Build".
+
 ## Tests
 
 ### `gametest.yml`
@@ -56,7 +60,7 @@ the required mods only and once with the optional integrations.
 | `artifact-name` | `gradle-build` | Artifact with the built jars (output of `build.yml`). It is downloaded from the same workflow run, so the calling job needs `needs: build`. |
 | `timeout` | `600` | Seconds to wait for a healthy server |
 | `timeout-minutes` | `30` | Maximum run time of a job |
-| `actions-ref` | `main` | Branch or tag of this repository to take the script from |
+| `actions-ref` | `main` | Branch or tag of this repository to take the script from. **Set it to the same ref as in `uses: …/server-starttest.yml@<ref>` whenever that ref is not `main`** (a tag or a feature branch), otherwise the workflow of one ref runs the script of `main`. GitHub does not tell a reusable workflow its own ref, so this cannot be detected automatically. |
 
 The test itself is `scripts/server-starttest.sh` of this repository, which works for multiloader projects
 (subprojects `fabric`/`forge`/`neoforge`) and single loader projects (jar in the root project). Run it locally in the

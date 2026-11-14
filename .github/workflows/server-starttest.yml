@@ -33,7 +33,7 @@ on:
         type: number
         default: 30
       actions-ref:
-        description: 'Branch or tag of cech12/MinecraftModActions to take the server start script from'
+        description: 'Branch or tag of cech12/MinecraftModActions to take the server start script from. GitHub does not tell a reusable workflow its own ref, so set this to the same ref as in "uses: ...server-starttest.yml@<ref>" when it is not main.'
         required: false
         type: string
         default: main

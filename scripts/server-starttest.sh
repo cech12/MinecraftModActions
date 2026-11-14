@@ -57,6 +57,28 @@ if [ ! -f gradle.properties ]; then
     echo "gradle.properties not found in $MOD_DIR. Run the script in the root directory of the mod repository." >&2
     exit 2
 fi
+# Multiloader project (subproject per loader) or single loader project (jar in the root project)
+if [ -f "$LOADER/build.gradle" ] || [ -f "$LOADER/build.gradle.kts" ]; then
+    LIBS="$LOADER/build/libs"
+else
+    # single loader project: the requested loader must be the loader of the root project
+    RES="src/main/resources"
+    if [ -f "$RES/fabric.mod.json" ]; then ROOT_LOADER=fabric
+    elif [ -f "$RES/META-INF/neoforge.mods.toml" ]; then ROOT_LOADER=neoforge
+    elif [ -f "$RES/META-INF/mods.toml" ]; then ROOT_LOADER=forge
+    else ROOT_LOADER=""
+    fi
+    if [ -z "$ROOT_LOADER" ]; then
+        echo "No subproject $LOADER and no mod metadata (fabric.mod.json, neoforge.mods.toml, mods.toml) in $RES." >&2
+        exit 2
+    fi
+    if [ "$ROOT_LOADER" != "$LOADER" ]; then
+        echo "This is a single loader project for $ROOT_LOADER, not for $LOADER. Remove $LOADER from the loaders list." >&2
+        exit 2
+    fi
+    LIBS="build/libs"
+fi
+
 DEPS_FILE="scripts/server-starttest.deps"
 ALLOWLIST_FILE="scripts/server-starttest.allowlist"
 
@@ -142,11 +164,6 @@ fi
 
 # Release jar: <loader>/build/libs of a multiloader project or build/libs of a single loader project, without
 # sources, javadoc and dev jars. If several jars are left, the one with the mod version wins.
-if [ -f "$LOADER/build.gradle" ] || [ -f "$LOADER/build.gradle.kts" ]; then
-    LIBS="$LOADER/build/libs"
-else
-    LIBS="build/libs"
-fi
 JARS=()
 shopt -s nullglob
 for jar in "$LIBS"/*.jar; do
@@ -159,10 +176,10 @@ shopt -u nullglob
 if [ "${#JARS[@]}" -gt 1 ]; then
     MOD_VERSION="$(prop_or_empty mod_version)"
     MATCHING=()
-    for jar in "${JARS[@]}"; do
+    for jar in ${JARS[@]+"${JARS[@]}"}; do
         if [ -n "$MOD_VERSION" ] && [[ "$(basename "$jar")" == *"$MOD_VERSION"* ]]; then MATCHING+=("$jar"); fi
     done
-    JARS=("${MATCHING[@]}")
+    JARS=(${MATCHING[@]+"${MATCHING[@]}"})
 fi
 if [ "${#JARS[@]}" -ne 1 ]; then
     echo "Expected exactly one release jar in $LIBS, found ${#JARS[@]}: ${JARS[*]:-}. Run ./gradlew build first." >&2
@@ -297,7 +314,13 @@ PROBLEMS="$WORK/logs/problems.log"
 # (crashes are detected via the crash-reports directory below, "crash" alone matches mod names like fabric-crash-report-info)
 grep -inE "exception|mixin.*(error|fail)|error.*${MOD_ID}|${MOD_ID}.*error" "$SERVER_LOG" > "$PROBLEMS" || true
 if [ -s "$PROBLEMS" ] && [ -s "$ALLOWLIST" ]; then
-    grep -vEf "$ALLOWLIST" "$PROBLEMS" > "$PROBLEMS.tmp" || true
+    # exit code 1 only means that every line was allowed, 2 is an invalid regex (which would hide all problems)
+    rc=0
+    grep -vEf "$ALLOWLIST" "$PROBLEMS" > "$PROBLEMS.tmp" || rc=$?
+    if [ "$rc" -gt 1 ]; then
+        log "**Invalid regex in the allowlist** ($ALLOWLIST_FILE or the built-in one), see the grep error above."
+        exit 2
+    fi
     mv "$PROBLEMS.tmp" "$PROBLEMS"
 fi
 if [ -s "$PROBLEMS" ]; then

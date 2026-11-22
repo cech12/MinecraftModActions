@@ -88,7 +88,11 @@ It takes everything from the mod repository and its built jar:
   optional, on Forge/NeoForge the `[[dependencies]]` of `mods.toml`/`neoforge.mods.toml` (client only dependencies are
   ignored, as well as libraries bundled as jar in jar). Required dependencies are always installed and must exist for
   the Minecraft version. Optional dependencies are only installed in the integrations run and are skipped if they are
-  not available yet. Their own required dependencies are installed automatically. A loader without optional dependencies skips the integrations run.
+  not available yet. The required dependencies of the dependencies are resolved the same way (recursively, from the
+  metadata of their jars, jar in jar libraries are not installed twice); an optional dependency is skipped as a whole
+  if one of them is not available. Every chosen version must also fit the loader version (loader range in the
+  metadata of its jar), otherwise the next version is taken. A loader without optional dependencies skips the
+  integrations run.
 - `scripts/server-starttest.allowlist` (optional): extended regexes of harmless log lines, in addition to the built-in
   ones (Netty kqueue probing and LAN advertising in containers).
 

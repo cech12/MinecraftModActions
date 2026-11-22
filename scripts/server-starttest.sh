@@ -255,16 +255,15 @@ cleanup() { docker rm -f "$NAME" > /dev/null 2>&1 || true; }
 cleanup
 trap cleanup EXIT
 
-# The dependencies of the mods in MODRINTH_PROJECTS (e.g. MezzConfig of JEI) are resolved by the image. It only
-# accepts release versions by default, but many mods only publish beta versions for new Minecraft versions, so beta
-# versions are allowed, too (the mods themselves are already pinned to a version by server-starttest-resolve.py).
+# All mods in MODRINTH_PROJECTS are pinned to a version by server-starttest-resolve.py, incl. the dependencies of the
+# dependencies (e.g. MezzConfig of JEI, Architectury of REI) that fit the loader version. The image must not resolve
+# dependencies itself: it would take their newest versions, which may need a newer loader version.
 docker run -d --name "$NAME" \
     -e EULA=TRUE \
     -e VERSION="$MC_VERSION" \
     "${LOADER_ENV[@]}" \
     -e MODRINTH_PROJECTS="$MODRINTH_PROJECTS" \
-    -e MODRINTH_DOWNLOAD_DEPENDENCIES=required \
-    -e MODRINTH_ALLOWED_VERSION_TYPE=beta \
+    -e MODRINTH_DOWNLOAD_DEPENDENCIES=none \
     -e MEMORY=2G \
     -e UID="$(id -u)" -e GID="$(id -g)" \
     -e ONLINE_MODE=FALSE \

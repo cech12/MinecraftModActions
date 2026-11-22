@@ -13,6 +13,9 @@
 # Cloth Config on Forge/NeoForge
 cloth_config            cloth-config
 roughlyenoughitems      rei
+# dependencies of JEI and REI
+mezz_config             mezzconfig
+architectury            architectury-api
 theoneprobe             the-one-probe
 # Trinkets is continued as "Trinkets Updated" since Minecraft 1.21.11
 trinkets                trinkets trinkets-updated

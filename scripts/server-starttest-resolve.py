@@ -2,7 +2,10 @@
 """Resolves the loader version and the dependencies of a mod for the server start test (server-starttest.sh).
 
 The dependencies and their version ranges are read from the metadata of the built jar (fabric.mod.json,
-neoforge.mods.toml, mods.toml). Every version that is chosen satisfies these ranges (lower and upper bounds).
+neoforge.mods.toml, mods.toml). Every version that is chosen satisfies these ranges (lower and upper bounds) and the
+loader range of its own jar (the jar is downloaded from Modrinth and its metadata is read). The required dependencies
+of the chosen dependencies are resolved the same way (recursively), so the server image does not have to resolve any
+dependency itself (it would take the newest version, which may need a newer loader version).
 
 Version sets (--versions):
   build    loader version of gradle.properties, dependencies in the version of gradle.properties (preferably the
@@ -208,6 +211,23 @@ def provided_mod_ids(jar, loader):
     return ids
 
 
+def own_mod_ids(jar, loader):
+    """Mod ids of the jar itself (incl. provided ids), without its jar in jar libraries."""
+    ids = set()
+    names = jar.namelist()
+    if loader == "fabric":
+        if "fabric.mod.json" in names:
+            metadata = json.loads(jar.read("fabric.mod.json"))
+            ids.add(metadata.get("id"))
+            ids.update(metadata.get("provides", []))
+    else:
+        for toml_name in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
+            if toml_name in names:
+                ids.update(mod.get("modId") for mod in read_toml(jar.read(toml_name)).get("mods", []))
+    ids.discard(None)
+    return ids
+
+
 def metadata_dependencies(jar_path, loader, mod_id):
     """Returns (loader range, list of (kind, mod id, range alternatives), provided mod ids)."""
     with zipfile.ZipFile(jar_path) as jar:
@@ -247,6 +267,11 @@ def metadata_dependencies(jar_path, loader, mod_id):
         if dep_id not in result or kind == "required":
             result[dep_id] = (kind, alternatives)
     return loader_range, [(kind, dep_id, alt) for dep_id, (kind, alt) in result.items()], provided
+
+
+def is_fabric_api_module(dep_id):
+    """Modules and old ids of Fabric API (fabric-*-vN), they are part of fabric-api."""
+    return dep_id in ("fabric", "fabric-api-base") or re.match(r"^fabric-.+-v\d+$", dep_id) is not None
 
 
 # ---------------------------------------------------------------- mapping to Modrinth projects
@@ -370,8 +395,52 @@ def comparable_version(version_number, mc_version, strip_mc_prefix=True):
     return re.sub(mc_prefix(mc_version), "", number) if strip_mc_prefix else number
 
 
-def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, properties, server_only=False):
-    """Returns (project, version, note) or (None, reason, None). With server_only, client only projects are not used."""
+# the jars of at most this number of versions of a project are downloaded to find one that fits the loader version
+MAX_JAR_CHECKS = 8
+_jars = {}
+
+
+def jar_metadata(version, loader):
+    """(loader range, dependencies, own mod ids) of the primary file of a Modrinth version (cached), None if unreadable."""
+    key = (version["id"], loader)
+    if key not in _jars:
+        files = version.get("files") or []
+        file = next((f for f in files if f.get("primary")), files[0] if files else None)
+        result = None
+        if file is not None and file.get("url"):
+            data = fetch(file["url"])
+            if data is not None:
+                try:
+                    with zipfile.ZipFile(io.BytesIO(data)) as jar:
+                        own = own_mod_ids(jar, loader)
+                    loader_range, dependencies, _ = metadata_dependencies(io.BytesIO(data), loader, None)
+                    result = (loader_range, [d for d in dependencies if d[1] not in own], own)
+                except (KeyError, zipfile.BadZipFile, ValueError, tomllib.TOMLDecodeError):
+                    result = None
+        _jars[key] = result
+    return _jars[key]
+
+
+def preference_order(candidates, mode, build_version):
+    """Candidates (oldest first) in the order they are tried: build version, oldest (minimum) or newest releases."""
+    if mode == "newest":
+        releases = [c for c in candidates if c["version_type"] == "release"]
+        others = [c for c in candidates if c["version_type"] != "release"]
+        return releases[::-1] + others[::-1]
+    ordered = list(candidates)
+    if build_version is not None:
+        ordered.remove(build_version)
+        ordered.insert(0, build_version)
+    return ordered
+
+
+def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode, properties, loader_version,
+                       server_only=False, verify_projects=()):
+    """Returns (project, version, note, dependencies of its jar) or (None, reason, None, None).
+
+    The chosen version also fits the loader version (loader range of its jar). With server_only, client only projects
+    are not used. For the projects of verify_projects the jar must contain the mod id (they are only guessed).
+    """
     reasons = []
     for project in projects:
         if server_only:
@@ -397,14 +466,71 @@ def resolve_dependency(dep_id, alternatives, projects, loader, mc_version, mode,
                            f"metadata (version numbers: {', '.join(v['version_number'] for v in versions[-3:])}); the "
                            "Modrinth version numbers may not match the mod versions")
             continue
+        build_version = None
         if mode == "build":
             named, other = build_version_values(properties, dep_id, project)
-            version = find_build_version(candidates, named) or find_build_version(candidates, other)
-            if version is not None:
-                return project, version, ""
-            return project, candidates[0], "no build version in gradle.properties, minimum version used"
-        return project, choose(candidates, mode, prefer=lambda v: v["version_type"] == "release"), ""
-    return None, "; ".join(reasons) or "ignored", None
+            build_version = find_build_version(candidates, named) or find_build_version(candidates, other)
+        wrong_project = False
+        for checked, version in enumerate(preference_order(candidates, mode, build_version)):
+            if checked >= MAX_JAR_CHECKS:
+                break
+            metadata = jar_metadata(version, loader)
+            if metadata is None:
+                continue
+            jar_loader_range, dependencies, own_ids = metadata
+            if project in verify_projects and dep_id not in own_ids:
+                wrong_project = True
+                break
+            if not satisfies(loader_version, jar_loader_range):
+                continue
+            note = ""
+            if mode == "build" and version is not build_version:
+                note = ("build version needs another loader version" if build_version is not None
+                        else "no build version in gradle.properties") + ", " + (
+                    "minimum" if version is candidates[0] else "other") + " version used"
+            return project, version, note, dependencies
+        if wrong_project:
+            reasons.append(f"{project}: does not contain the mod {dep_id}")
+        else:
+            reasons.append(f"{project}: no version fits {loader} {loader_version} (loader range of the jars)")
+    return None, "; ".join(reasons) or "ignored", None, None
+
+
+def resolve_tree(kind, dep_id, alternatives, parent, context, seen, out, depth=0, extra_projects=()):
+    """Resolves a dependency and (recursively) its required dependencies into out. Returns an error text or None."""
+    args, mode, mapping, loader_version = context
+    if args.loader == "fabric" and parent is not None and dep_id not in mapping and is_fabric_api_module(dep_id):
+        # (a dependency of a dependency on a module of Fabric API)
+        dep_id, alternatives = "fabric-api", [[]]
+    if dep_id in seen:
+        return None
+    if depth > 8:
+        return f"the dependency chain is too long at {dep_id}"
+    projects = modrinth_projects(dep_id, mapping)
+    if not projects and dep_id in mapping:
+        return None  # ignored by the mapping
+    guessed = [p for p in extra_projects if p not in projects]
+    project, version, note, dependencies = resolve_dependency(
+        dep_id, alternatives, projects + guessed, args.loader, args.mc_version, mode, args.properties, loader_version,
+        server_only=kind == "optional", verify_projects=set(guessed))
+    if project is None:
+        return f"{dep_id} ({range_text(alternatives)}) is not available: {version}"
+    seen.add(dep_id)
+    if parent is not None:
+        note = f"dependency of {parent}" + (f", {note}" if note else "")
+    out.append((kind if parent is None else "dependency", dep_id, project, version["id"], version["version_number"],
+                range_text(alternatives), note))
+    # Modrinth projects of the required dependencies of this version, for mod ids that are no project names
+    required_projects = [d["project_id"] for d in version.get("dependencies") or []
+                         if d.get("dependency_type") == "required" and d.get("project_id")]
+    for sub_kind, sub_id, sub_alternatives in sorted(dependencies, key=lambda d: d[1]):
+        if sub_kind != "required":
+            continue
+        error = resolve_tree("required", sub_id, sub_alternatives, dep_id, context, seen, out, depth + 1,
+                             required_projects)
+        if error is not None:
+            return error
+    return None
 
 
 def resolve(args, mode):
@@ -424,36 +550,34 @@ def resolve(args, mode):
     if args.loader_version:
         loader_version = args.loader_version
     mapping = read_mapping(args.mapping)
-    mods, skipped, seen_projects = [], [], set()
+    context = (args, mode, mapping, loader_version)
+    mods, skipped, seen = [], [], set()
     for kind, dep_id, alternatives in sorted(dependencies, key=lambda d: (d[0] != "required", d[1])):
         if kind == "optional" and not args.integrations:
             continue
         # (mods with a similar id that are no part of Fabric API are listed in the mapping, e.g. fabric-permissions-api-v0)
-        if args.loader == "fabric" and dep_id not in mapping and (
-                dep_id in ("fabric", "fabric-api-base") or re.match(r"^fabric-.+-v\d+$", dep_id)):
+        if args.loader == "fabric" and dep_id not in mapping and is_fabric_api_module(dep_id):
             message = (f"the dependency {dep_id} is a module or an old id of Fabric API, which is not supported: "
                        "declare fabric-api instead")
             if kind == "required":
                 raise Failure(message)
             skipped.append((dep_id, message))
             continue
-        projects = modrinth_projects(dep_id, mapping)
-        if not projects:
+        if not modrinth_projects(dep_id, mapping):
             continue
-        # optional client only mods (e.g. Mod Menu) are not loaded on a server, so they are not installed
-        project, version, note = resolve_dependency(dep_id, alternatives, projects, args.loader, args.mc_version,
-                                                    mode, args.properties, server_only=kind == "optional")
-        if project is None:
+        # optional client only mods (e.g. Mod Menu) are not loaded on a server, so they are not installed; an optional
+        # dependency is only installed if all its required dependencies can be resolved, too
+        tree_seen, tree = set(seen), []
+        error = resolve_tree(kind, dep_id, alternatives, None, context, tree_seen, tree)
+        if error is not None:
             if kind == "required":
-                raise Failure(f"required dependency {dep_id} ({range_text(alternatives)}) is not available: {version}. "
-                              "If the mod has another name on Modrinth, add it to server-starttest-mods.txt of "
-                              "cech12/MinecraftModActions.")
-            skipped.append((dep_id, version))
+                raise Failure(f"required dependency {error}. If the mod has another name on Modrinth, add it to "
+                              "server-starttest-mods.txt of cech12/MinecraftModActions.")
+            skipped.append((dep_id, error))
             continue
-        if project in seen_projects:
-            continue
-        seen_projects.add(project)
-        mods.append((kind, dep_id, project, version["id"], version["version_number"], range_text(alternatives), note))
+        seen.update(tree_seen)
+        projects_in_use = {mod[2] for mod in mods}
+        mods.extend(mod for mod in tree if mod[2] not in projects_in_use)
     # optional dependencies that are installed (only counted with --integrations)
     optional_count = sum(1 for mod in mods if mod[0] == "optional")
     return loader_version, range_text(loader_range), optional_count, mods, skipped
